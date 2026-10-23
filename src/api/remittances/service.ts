@@ -27,14 +27,23 @@ export function serializeRemittance(tx: RemittanceTransaction & { corridor: { co
   }
 }
 
-export async function list(userId: string) {
+const DEFAULT_PAGE_SIZE = 20
+const MAX_PAGE_SIZE = 100
+
+export async function list(userId: string, options: { limit?: number; cursor?: string } = {}) {
+  const limit = Math.min(options.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE)
+
   const transactions = await prisma.remittanceTransaction.findMany({
     where: { userId },
     include: { corridor: { select: { code: true } } },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
   })
-  return transactions.map(serializeRemittance)
+
+  const hasMore = transactions.length > limit
+  const page = hasMore ? transactions.slice(0, limit) : transactions
+  return { items: page.map(serializeRemittance), nextCursor: hasMore ? page[page.length - 1].id : null }
 }
 
 export async function get(userId: string, id: string) {

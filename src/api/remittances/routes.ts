@@ -32,10 +32,15 @@ const IdParams = z.object({ id: z.string().uuid() })
 remittancesRouter.get({
   path: '',
   summary: "List the current user's remittance transactions",
+  description: "Newest first. Pass the previous response's `nextCursor` to fetch the next page.",
   tags: ['Remittances'],
   auth: 'user',
-  response: z.array(RemittanceSchema),
-  handler: async ({ auth }) => list(auth.userId),
+  query: z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    cursor: z.string().uuid().optional(),
+  }),
+  response: z.object({ items: z.array(RemittanceSchema), nextCursor: z.string().uuid().nullable() }),
+  handler: async ({ auth, query }) => list(auth.userId, query),
 })
 
 remittancesRouter.get({
