@@ -30,7 +30,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@asteasolutions/zod-to-openapi": "^9.1.0",
     "@prisma/client": "^7.10.1",
     "@sentry/node": "^11.9.0",
     "@simplewebauthn/server": "^13.3.3",
