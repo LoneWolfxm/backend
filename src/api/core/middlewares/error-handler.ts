@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import type { NextFunction, Request, Response } from 'express'
 import { ZodError } from 'zod'
 
@@ -8,6 +9,20 @@ export function notFoundHandler(req: Request, res: Response): void {
   res.status(404).json({ error: { code: 'NOT_FOUND', message: `Route ${req.method} ${req.path} not found` } })
 }
 
+/** Translates the Prisma error codes this service can actually hit into an AppError, or null if none apply. */
+function mapPrismaError(err: Prisma.PrismaClientKnownRequestError): AppError | null {
+  switch (err.code) {
+    case 'P2025':
+      return new AppError(404, 'NOT_FOUND', 'The requested record does not exist')
+    case 'P2002':
+      return new AppError(409, 'CONFLICT', 'A record with the same unique value already exists', { target: err.meta?.target })
+    case 'P2003':
+      return new AppError(400, 'BAD_REQUEST', 'Request references a record that does not exist', { field: err.meta?.field_name })
+    default:
+      return null
+  }
+}
+
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction): void {
   const context = { requestId: req.requestId, method: req.method, url: req.originalUrl }
 
@@ -16,6 +31,11 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
       error: { code: 'VALIDATION_ERROR', message: 'Request validation failed', details: err.flatten() },
     })
     return
+  }
+
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    const mapped = mapPrismaError(err)
+    if (mapped) err = mapped
   }
 
   if (err instanceof AppError) {
