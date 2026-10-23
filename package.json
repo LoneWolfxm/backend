@@ -15,6 +15,11 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"prisma/seed.ts\"",
+    "lint:fix": "npm run lint -- --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"prisma/seed.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"prisma/seed.ts\"",
     "openapi:export": "tsx scripts/export-openapi.ts",
     "prisma:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -42,6 +47,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@types/big.js": "^7.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -49,11 +55,16 @@
     "@types/node": "^22.20.5",
     "@types/supertest": "^7.2.1",
     "@types/swagger-ui-express": "^4.1.8",
+    "@vitest/coverage-v8": "^3.2.7",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
     "pino-pretty": "^13.2.0",
+    "prettier": "^3.9.10",
     "prisma": "^6.19.3",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
     "vitest": "^3.2.7"
   },
   "allowScripts": {

@@ -1,4 +1,5 @@
-import { Address, FeeBumpTransaction, Operation, scValToBigInt, Transaction, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
+import type { Operation, Transaction } from '@stellar/stellar-sdk'
+import { Address, FeeBumpTransaction, scValToBigInt, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
 
 import { prisma } from '../../config/database'
 import { env } from '../../config/env'
@@ -6,7 +7,8 @@ import { logger } from '../../config/logger'
 import { STELLAR } from '../../config/stellar'
 import { BadRequestError, ForbiddenError, TooManyRequestsError } from '../../errors'
 import { Subsidy } from '../contracts/bindings'
-import { SorobanService, SubmittedTransaction } from '../soroban'
+import type { SubmittedTransaction } from '../soroban'
+import { SorobanService } from '../soroban'
 
 export type SponsorContext = {
   userId?: string
@@ -76,10 +78,14 @@ export class Paymaster {
       throw new ForbiddenError(`Contract ${target} is not eligible for sponsorship`, { contractId: target }, 'POLICY_VIOLATION')
     }
     if (BigInt(inner.fee) > BigInt(env.PAYMASTER_MAX_FEE_STROOPS)) {
-      throw new BadRequestError('Inner transaction fee exceeds sponsorship cap', {
-        fee: inner.fee,
-        cap: env.PAYMASTER_MAX_FEE_STROOPS,
-      }, 'POLICY_VIOLATION')
+      throw new BadRequestError(
+        'Inner transaction fee exceeds sponsorship cap',
+        {
+          fee: inner.fee,
+          cap: env.PAYMASTER_MAX_FEE_STROOPS,
+        },
+        'POLICY_VIOLATION'
+      )
     }
     if (inner.signatures.length === 0) {
       throw new BadRequestError('Inner transaction must be signed by its source', undefined, 'POLICY_VIOLATION')
@@ -90,12 +96,7 @@ export class Paymaster {
   wrap(inner: Transaction): FeeBumpTransaction {
     // Fee-bump total = baseFee * (ops + 1); use the inner fee as the per-op bid so the
     // envelope always covers the inner resource fee. The network only charges what is used.
-    const feeBump = TransactionBuilder.buildFeeBumpTransaction(
-      STELLAR.paymaster,
-      inner.fee,
-      inner,
-      STELLAR.networkPassphrase
-    )
+    const feeBump = TransactionBuilder.buildFeeBumpTransaction(STELLAR.paymaster, inner.fee, inner, STELLAR.networkPassphrase)
     if (BigInt(feeBump.fee) > BigInt(env.PAYMASTER_MAX_FEE_STROOPS) * 2n) {
       throw new BadRequestError('Fee-bump fee exceeds sponsorship cap', { fee: feeBump.fee }, 'POLICY_VIOLATION')
     }
@@ -167,10 +168,14 @@ export class Paymaster {
   private async assertSubsidy(account: string, fee: bigint): Promise<void> {
     const allowance = scValToBigInt(await this.soroban.read(Subsidy.allowance(account)))
     if (allowance < fee) {
-      throw new ForbiddenError('Insufficient fee subsidy allowance', {
-        allowance: allowance.toString(),
-        required: fee.toString(),
-      }, 'SUBSIDY_EXHAUSTED')
+      throw new ForbiddenError(
+        'Insufficient fee subsidy allowance',
+        {
+          allowance: allowance.toString(),
+          required: fee.toString(),
+        },
+        'SUBSIDY_EXHAUSTED'
+      )
     }
   }
 }

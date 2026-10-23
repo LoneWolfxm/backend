@@ -1,15 +1,5 @@
-import {
-  Account,
-  Address,
-  Contract,
-  FeeBumpTransaction,
-  hash,
-  Operation,
-  rpc,
-  Transaction,
-  TransactionBuilder,
-  xdr,
-} from '@stellar/stellar-sdk'
+import type { FeeBumpTransaction, Transaction } from '@stellar/stellar-sdk'
+import { Account, Address, Contract, hash, Operation, rpc, TransactionBuilder, xdr } from '@stellar/stellar-sdk'
 
 import { logger } from '../../config/logger'
 import { STELLAR } from '../../config/stellar'
@@ -136,11 +126,7 @@ export class SorobanService {
   }
 
   /** Returns a copy of `entry` carrying the given signature and expiration. */
-  attachSignature(
-    entry: xdr.SorobanAuthorizationEntry,
-    validUntilLedger: number,
-    signature: xdr.ScVal
-  ): xdr.SorobanAuthorizationEntry {
+  attachSignature(entry: xdr.SorobanAuthorizationEntry, validUntilLedger: number, signature: xdr.ScVal): xdr.SorobanAuthorizationEntry {
     const signed = xdr.SorobanAuthorizationEntry.fromXDR(entry.toXDR())
     const credentials = signed.credentials().address()
     credentials.signatureExpirationLedger(validUntilLedger)

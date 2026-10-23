@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 
-import { Asset, BASE_FEE, Horizon, Keypair, NotFoundError as HorizonNotFoundError, Operation, TransactionBuilder } from '@stellar/stellar-sdk'
+import type { Asset } from '@stellar/stellar-sdk'
+import { BASE_FEE, Horizon, Keypair, NotFoundError as HorizonNotFoundError, Operation, TransactionBuilder } from '@stellar/stellar-sdk'
 
 import { env } from '../../config/env'
 import { logger } from '../../config/logger'

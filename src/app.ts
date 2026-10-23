@@ -1,5 +1,6 @@
 import cors from 'cors'
-import express, { Express, Request } from 'express'
+import type { Express, Request } from 'express'
+import express from 'express'
 import helmet from 'helmet'
 import pinoHttp from 'pino-http'
 import swaggerUi from 'swagger-ui-express'
@@ -32,7 +33,7 @@ export function createApp(): Express {
     express.json({
       limit: '256kb',
       verify: (req, _res, buf) => {
-        (req as Request).rawBody = buf
+        ;(req as Request).rawBody = buf
       },
     })
   )

@@ -1,7 +1,7 @@
 import { Address, nativeToScVal, StrKey, xdr } from '@stellar/stellar-sdk'
 
 import { STELLAR } from '../../config/stellar'
-import { InvocationInput } from '../soroban'
+import type { InvocationInput } from '../soroban'
 
 /**
  * RemitPulse contract ABI bindings.
@@ -88,9 +88,7 @@ export const Token = {
 const symbolMap = (entries: [string, xdr.ScVal][]): xdr.ScVal =>
   // Soroban requires map keys to be sorted
   xdr.ScVal.scvMap(
-    entries
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, val]) => new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol(key), val }))
+    entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, val]) => new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol(key), val }))
   )
 
 /**

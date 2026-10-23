@@ -1,4 +1,4 @@
-import { Request } from 'express'
+import type { Request } from 'express'
 import rateLimit from 'express-rate-limit'
 
 import { TooManyRequestsError } from '../../../errors'

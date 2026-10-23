@@ -1,4 +1,4 @@
-import { Passkey, User } from '@prisma/client'
+import type { Passkey, User } from '@prisma/client'
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server'
 
 import { prisma } from '../../config/database'

@@ -1,12 +1,6 @@
 import { z } from '../../lib/zod'
 import { ApiRouter } from '../core/router'
-import {
-  AuthenticationResponseSchema,
-  emailSchema,
-  RegistrationResponseSchema,
-  UserSchema,
-  WebAuthnOptionsSchema,
-} from '../core/schemas'
+import { AuthenticationResponseSchema, emailSchema, RegistrationResponseSchema, UserSchema, WebAuthnOptionsSchema } from '../core/schemas'
 import { AuthService } from './service'
 
 const service = new AuthService()

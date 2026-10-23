@@ -1,10 +1,12 @@
-import { RouteConfig } from '@asteasolutions/zod-to-openapi'
-import { Request, RequestHandler, Response, Router } from 'express'
-import { AnyZodObject, ZodTypeAny } from 'zod'
+import type { RouteConfig } from '@asteasolutions/zod-to-openapi'
+import type { Request, RequestHandler, Response } from 'express'
+import { Router } from 'express'
+import type { AnyZodObject, ZodTypeAny } from 'zod'
 
 import { UnauthorizedError } from '../../errors'
 import { z } from '../../lib/zod'
-import { AuthContext, requireAdmin, requireUser } from './middlewares/authentication'
+import type { AuthContext } from './middlewares/authentication'
+import { requireAdmin, requireUser } from './middlewares/authentication'
 import { sensitiveRateLimit } from './middlewares/rate-limit'
 import { ErrorResponseSchema, registry } from './openapi'
 
@@ -105,7 +107,10 @@ export class ApiRouter {
     }
   }
 
-  private document(method: Method, def: RouteDefinition<ZodTypeAny | undefined, AnyZodObject | undefined, AnyZodObject | undefined, ZodTypeAny, Auth>): void {
+  private document(
+    method: Method,
+    def: RouteDefinition<ZodTypeAny | undefined, AnyZodObject | undefined, AnyZodObject | undefined, ZodTypeAny, Auth>
+  ): void {
     const fullPath = `${this.prefix}${def.path}`.replace(/:(\w+)/g, '{$1}')
     const errors = { ...DEFAULT_ERRORS, ...def.errors }
     if (def.auth === 'user') errors[401] ??= 'Missing or invalid bearer token'

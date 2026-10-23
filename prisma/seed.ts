@@ -8,10 +8,42 @@ import { prisma } from '../src/config/database'
  * file) with the real anchor-issued asset issuer before connecting to a live anchor.
  */
 const CORRIDORS = [
-  { code: 'USDC', name: 'US Dollar (USDC)', assetCode: 'USDC', fiatCurrency: 'USD', anchorDomain: 'testanchor.stellar.org', markupBps: 25, fixedFee: '0.50' },
-  { code: 'EURC', name: 'Euro (EURC)', assetCode: 'EURC', fiatCurrency: 'EUR', anchorDomain: 'testanchor.stellar.org', markupBps: 30, fixedFee: '0.50' },
-  { code: 'ARST', name: 'Argentine Peso (ARST)', assetCode: 'ARST', fiatCurrency: 'ARS', anchorDomain: 'testanchor.stellar.org', markupBps: 75, fixedFee: '50' },
-  { code: 'BRLA', name: 'Brazilian Real (BRLA)', assetCode: 'BRLA', fiatCurrency: 'BRL', anchorDomain: 'testanchor.stellar.org', markupBps: 60, fixedFee: '2.00' },
+  {
+    code: 'USDC',
+    name: 'US Dollar (USDC)',
+    assetCode: 'USDC',
+    fiatCurrency: 'USD',
+    anchorDomain: 'testanchor.stellar.org',
+    markupBps: 25,
+    fixedFee: '0.50',
+  },
+  {
+    code: 'EURC',
+    name: 'Euro (EURC)',
+    assetCode: 'EURC',
+    fiatCurrency: 'EUR',
+    anchorDomain: 'testanchor.stellar.org',
+    markupBps: 30,
+    fixedFee: '0.50',
+  },
+  {
+    code: 'ARST',
+    name: 'Argentine Peso (ARST)',
+    assetCode: 'ARST',
+    fiatCurrency: 'ARS',
+    anchorDomain: 'testanchor.stellar.org',
+    markupBps: 75,
+    fixedFee: '50',
+  },
+  {
+    code: 'BRLA',
+    name: 'Brazilian Real (BRLA)',
+    assetCode: 'BRLA',
+    fiatCurrency: 'BRL',
+    anchorDomain: 'testanchor.stellar.org',
+    markupBps: 60,
+    fixedFee: '2.00',
+  },
 ]
 
 async function main() {
@@ -23,8 +55,10 @@ async function main() {
     })
     console.log(`Seeded corridor ${corridor.code}`)
   }
-  console.log('\nPlaceholder asset issuers were generated for each corridor. Replace them with your real anchor-issued ' +
-    'asset issuer via PATCH /v1/admin/corridors/:code before going live.')
+  console.log(
+    '\nPlaceholder asset issuers were generated for each corridor. Replace them with your real anchor-issued ' +
+      'asset issuer via PATCH /v1/admin/corridors/:code before going live.'
+  )
 }
 
 main()

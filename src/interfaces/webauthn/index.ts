@@ -1,16 +1,18 @@
-import {
+import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
+} from '@simplewebauthn/server'
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server'
 import { convertCOSEtoPKCS, isoBase64URL } from '@simplewebauthn/server/helpers'
-import { ChallengePurpose, Passkey } from '@prisma/client'
+import type { ChallengePurpose, Passkey } from '@prisma/client'
 
 import { prisma } from '../../config/database'
 import { env } from '../../config/env'
@@ -131,11 +133,7 @@ export class WebAuthnService {
    * Verifies an assertion over a Soroban auth payload and converts it into the
    * pieces the account contract's `__check_auth` expects.
    */
-  async verifyContractAssertion(
-    passkey: Passkey,
-    response: AuthenticationResponseJSON,
-    authPayload: Buffer
-  ): Promise<ContractAssertion> {
+  async verifyContractAssertion(passkey: Passkey, response: AuthenticationResponseJSON, authPayload: Buffer): Promise<ContractAssertion> {
     const newCounter = await this.verifyAssertion(passkey, response, isoBase64URL.fromBuffer(new Uint8Array(authPayload)))
     return {
       authenticatorData: Buffer.from(isoBase64URL.toBuffer(response.response.authenticatorData)),

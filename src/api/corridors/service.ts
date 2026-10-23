@@ -1,4 +1,4 @@
-import { Corridor } from '@prisma/client'
+import type { Corridor } from '@prisma/client'
 import { Asset } from '@stellar/stellar-sdk'
 
 import { prisma } from '../../config/database'

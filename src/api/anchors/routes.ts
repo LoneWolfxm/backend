@@ -9,7 +9,7 @@ const CodeParams = z.object({ code: z.string().min(2).max(12).openapi({ example:
 anchorsRouter.post({
   path: '/:code/sep10',
   summary: 'Authenticate with the corridor anchor (SEP-10)',
-  description: 'Derives the user\'s custody account for this corridor and completes SEP-10 WebAuth, caching the anchor JWT.',
+  description: "Derives the user's custody account for this corridor and completes SEP-10 WebAuth, caching the anchor JWT.",
   tags: ['Anchors'],
   auth: 'user',
   sensitive: true,
@@ -22,7 +22,7 @@ anchorsRouter.post({
 anchorsRouter.post({
   path: '/:code/deposit',
   summary: 'Start a SEP-24 interactive deposit',
-  description: 'Returns an interactive_customer_info_needed URL for the user to complete the anchor\'s hosted deposit flow.',
+  description: "Returns an interactive_customer_info_needed URL for the user to complete the anchor's hosted deposit flow.",
   tags: ['Anchors'],
   auth: 'user',
   sensitive: true,

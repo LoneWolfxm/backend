@@ -1,4 +1,4 @@
-import { RemittanceTransaction } from '@prisma/client'
+import type { RemittanceTransaction } from '@prisma/client'
 
 import { prisma } from '../../config/database'
 import { NotFoundError } from '../../errors'

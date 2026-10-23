@@ -1,4 +1,4 @@
-import { Prisma, PendingInvocation, InvocationKind } from '@prisma/client'
+import type { Prisma, PendingInvocation, InvocationKind } from '@prisma/client'
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server'
 import { Keypair, scValToNative, StrKey, xdr } from '@stellar/stellar-sdk'
 
@@ -7,8 +7,10 @@ import { env } from '../../config/env'
 import { logger } from '../../config/logger'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors'
 import { relayAllowedContracts, WalletSignature } from '../../interfaces/contracts/bindings'
-import { Paymaster, SponsorResult } from '../../interfaces/paymaster'
-import { InvocationInput, SorobanService } from '../../interfaces/soroban'
+import type { SponsorResult } from '../../interfaces/paymaster'
+import { Paymaster } from '../../interfaces/paymaster'
+import type { InvocationInput } from '../../interfaces/soroban'
+import { SorobanService } from '../../interfaces/soroban'
 import { WebAuthnService } from '../../interfaces/webauthn'
 import { corridorTokenContracts } from '../corridors/service'
 
@@ -24,9 +26,7 @@ export type PrepareInput = {
 }
 
 export type SubmitInput =
-  | { type: 'passkey'; assertion: AuthenticationResponseJSON }
-  | { type: 'session_key'; signature: Buffer }
-  | { type: 'none' }
+  { type: 'passkey'; assertion: AuthenticationResponseJSON } | { type: 'session_key'; signature: Buffer } | { type: 'none' }
 
 export type SubmitHooks = {
   /** Runs after the invocation is claimed; returns a compensating action used if submission fails. */
@@ -92,7 +92,11 @@ export class InvocationService {
 
     const allowed = await this.allowedContracts(wallet)
     if (!allowed.has(input.invocation.contractId)) {
-      throw new ForbiddenError(`Contract ${input.invocation.contractId} is not allowed through the relay`, undefined, 'CONTRACT_NOT_ALLOWED')
+      throw new ForbiddenError(
+        `Contract ${input.invocation.contractId} is not allowed through the relay`,
+        undefined,
+        'CONTRACT_NOT_ALLOWED'
+      )
     }
 
     const operation = this.soroban.buildOperation(input.invocation)
@@ -138,9 +142,7 @@ export class InvocationService {
     })
 
     const webauthnOptions =
-      input.signer === 'passkey' && authPayload
-        ? await this.webauthn.contractSigningOptions(user.passkeys, authPayload)
-        : undefined
+      input.signer === 'passkey' && authPayload ? await this.webauthn.contractSigningOptions(user.passkeys, authPayload) : undefined
 
     return {
       invocationId: pending.id,
@@ -217,11 +219,7 @@ export class InvocationService {
     }
   }
 
-  private attachWalletAuth(
-    operation: xdr.Operation,
-    wallet: string | null,
-    signed: xdr.SorobanAuthorizationEntry | null
-  ): xdr.Operation {
+  private attachWalletAuth(operation: xdr.Operation, wallet: string | null, signed: xdr.SorobanAuthorizationEntry | null): xdr.Operation {
     if (!signed || !wallet) return operation
     const auth = operation.body().invokeHostFunctionOp().auth()
     return this.soroban.withAuth(
@@ -230,7 +228,11 @@ export class InvocationService {
     )
   }
 
-  private async buildSignedAuth(userId: string, pending: PendingInvocation, input: SubmitInput): Promise<xdr.SorobanAuthorizationEntry | null> {
+  private async buildSignedAuth(
+    userId: string,
+    pending: PendingInvocation,
+    input: SubmitInput
+  ): Promise<xdr.SorobanAuthorizationEntry | null> {
     if (input.type === 'none') return null
     if (!pending.authEntryXdr || !pending.authPayload || !pending.validUntilLedger) {
       throw new BadRequestError('Invocation has no auth entry to sign')

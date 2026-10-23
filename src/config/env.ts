@@ -72,7 +72,11 @@ const EnvSchema = z.object({
   // Session keys (amounts in whole token units, e.g. "25" = 25 USDC)
   SESSION_KEY_MAX_PER_TX: z.string().default('25'),
   SESSION_KEY_MAX_TOTAL: z.string().default('200'),
-  SESSION_KEY_MAX_TTL_SECONDS: z.coerce.number().int().positive().default(7 * 24 * 3600),
+  SESSION_KEY_MAX_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(7 * 24 * 3600),
 
   // SEP-10 / SEP-24
   SEP10_CLIENT_DOMAIN: z.string().optional(),

@@ -58,7 +58,10 @@ adminCorridorsRouter.patch({
       markupBps: z.number().int().min(0).max(2_000),
       fixedFee: z.string().regex(/^\d+(\.\d{1,7})?$/),
       minAmount: z.string().regex(/^\d+(\.\d{1,7})?$/),
-      maxAmount: z.string().regex(/^\d+(\.\d{1,7})?$/).nullable(),
+      maxAmount: z
+        .string()
+        .regex(/^\d+(\.\d{1,7})?$/)
+        .nullable(),
       isActive: z.boolean(),
       anchorDomain: z.string().min(3),
     })

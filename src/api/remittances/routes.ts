@@ -51,7 +51,7 @@ remittancesRouter.get({
 
 remittancesRouter.post({
   path: '/:id/sync',
-  summary: 'Refresh a transaction\'s status from the anchor',
+  summary: "Refresh a transaction's status from the anchor",
   tags: ['Remittances'],
   auth: 'user',
   sensitive: true,

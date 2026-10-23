@@ -1,4 +1,4 @@
-import { SessionKey } from '@prisma/client'
+import type { SessionKey } from '@prisma/client'
 
 import { prisma } from '../../config/database'
 import { env } from '../../config/env'

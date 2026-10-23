@@ -1,11 +1,12 @@
-import { RemittanceStatus } from '@prisma/client'
+import type { RemittanceStatus } from '@prisma/client'
 import { Asset } from '@stellar/stellar-sdk'
 
 import { prisma } from '../../config/database'
 import { BadRequestError, NotFoundError } from '../../errors'
 import { deriveAnchorKeypair, ensureAnchorAccount } from '../../interfaces/anchors/custody'
 import { authenticateWithAnchor } from '../../interfaces/anchors/sep10'
-import { fetchTransaction, Sep24Transaction, startDeposit, startWithdrawal, verifyWebhookSignature } from '../../interfaces/anchors/sep24'
+import type { Sep24Transaction } from '../../interfaces/anchors/sep24'
+import { fetchTransaction, startDeposit, startWithdrawal, verifyWebhookSignature } from '../../interfaces/anchors/sep24'
 import { decrypt, encrypt } from '../../lib/crypto'
 import { getCorridor } from '../corridors/service'
 
@@ -58,12 +59,7 @@ export async function authenticate(userId: string, code: string) {
   return { account: keypair.publicKey(), anchorDomain: corridor.anchorDomain, authenticated: Boolean(token) }
 }
 
-async function initiate(
-  userId: string,
-  code: string,
-  kind: 'deposit' | 'withdrawal',
-  amount?: string
-) {
+async function initiate(userId: string, code: string, kind: 'deposit' | 'withdrawal', amount?: string) {
   const corridor = await getCorridor(code)
   const keypair = deriveAnchorKeypair(userId)
   const asset = new Asset(corridor.assetCode, corridor.assetIssuer)
@@ -71,9 +67,10 @@ async function initiate(
   await ensureAnchorAccount(keypair, asset)
   const token = await ensureAnchorSession(userId, corridor.id, corridor.anchorDomain, keypair.publicKey())
 
-  const flow = kind === 'deposit'
-    ? await startDeposit(corridor.anchorDomain, token, { assetCode: corridor.assetCode, account: keypair.publicKey(), amount })
-    : await startWithdrawal(corridor.anchorDomain, token, { assetCode: corridor.assetCode, account: keypair.publicKey(), amount })
+  const flow =
+    kind === 'deposit'
+      ? await startDeposit(corridor.anchorDomain, token, { assetCode: corridor.assetCode, account: keypair.publicKey(), amount })
+      : await startWithdrawal(corridor.anchorDomain, token, { assetCode: corridor.assetCode, account: keypair.publicKey(), amount })
 
   const transaction = await prisma.remittanceTransaction.create({
     data: {
@@ -134,7 +131,9 @@ export async function handleWebhook(code: string, rawBody: Buffer, signatureHead
   const remote = body.transaction ?? (body as Sep24Transaction)
   if (!remote?.id) throw new BadRequestError('Webhook payload is missing transaction.id')
 
-  const transaction = await prisma.remittanceTransaction.findUnique({ where: { corridorId_anchorTxId: { corridorId: corridor.id, anchorTxId: remote.id } } })
+  const transaction = await prisma.remittanceTransaction.findUnique({
+    where: { corridorId_anchorTxId: { corridorId: corridor.id, anchorTxId: remote.id } },
+  })
   if (!transaction) throw new NotFoundError('Remittance transaction')
 
   await recordUpdate(transaction.id, 'webhook', remote)

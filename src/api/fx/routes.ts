@@ -26,7 +26,10 @@ fxRouter.get({
   auth: 'none',
   query: z.object({
     corridor: z.string().min(2).max(12).openapi({ example: 'BRLA' }),
-    amount: z.string().regex(/^\d+(\.\d{1,7})?$/).openapi({ example: '100.00' }),
+    amount: z
+      .string()
+      .regex(/^\d+(\.\d{1,7})?$/)
+      .openapi({ example: '100.00' }),
     kind: z.enum(['deposit', 'withdrawal']).default('deposit'),
   }),
   response: z.object({

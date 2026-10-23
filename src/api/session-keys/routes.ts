@@ -38,7 +38,12 @@ sessionKeysRouter.post({
     tokenContract: zContractId,
     perTxLimit: zAmount,
     totalLimit: zAmount,
-    ttlSeconds: z.number().int().min(60).max(env.SESSION_KEY_MAX_TTL_SECONDS).default(24 * 3600),
+    ttlSeconds: z
+      .number()
+      .int()
+      .min(60)
+      .max(env.SESSION_KEY_MAX_TTL_SECONDS)
+      .default(24 * 3600),
   }),
   response: z.object({ sessionKey: SessionKeySchema, invocation: PreparedInvocationSchema }),
   errors: { 409: 'Key already registered' },
@@ -57,8 +62,7 @@ sessionKeysRouter.get({
 sessionKeysRouter.delete({
   path: '/:id',
   summary: 'Revoke a session key',
-  description:
-    'Immediately stops relaying for the key and returns a `revoke_session_key` invocation for on-chain removal.',
+  description: 'Immediately stops relaying for the key and returns a `revoke_session_key` invocation for on-chain removal.',
   tags: ['Session Keys'],
   auth: 'user',
   sensitive: true,

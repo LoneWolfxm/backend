@@ -29,7 +29,9 @@ export function derToCompactP256(der: Buffer): Buffer {
   // Skip SEQUENCE header (short-form length; P-256 signatures are always < 128 bytes)
   const r = readDerInteger(der, 2)
   const s = readDerInteger(der, r.next)
-  return normaliseCompact(Buffer.concat([toFixed32(BigInt(`0x${r.value.toString('hex')}`)), toFixed32(BigInt(`0x${s.value.toString('hex')}`))]))
+  return normaliseCompact(
+    Buffer.concat([toFixed32(BigInt(`0x${r.value.toString('hex')}`)), toFixed32(BigInt(`0x${s.value.toString('hex')}`))])
+  )
 }
 
 function normaliseCompact(compact: Buffer): Buffer {

@@ -7,7 +7,8 @@ import { prisma } from '../../config/database'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../errors'
 import { AccountFactory, Token } from '../../interfaces/contracts/bindings'
 import { Big, fromBaseUnits, toBaseUnits } from '../../lib/money'
-import { InvocationResult, InvocationService, SubmitInput } from './invocation-service'
+import type { InvocationResult, SubmitInput } from './invocation-service'
+import { InvocationService } from './invocation-service'
 
 export type TypedArg =
   | { type: 'address'; value: string }
@@ -112,9 +113,14 @@ export class WalletService {
       if (key.status !== 'active' || key.expiresAt < new Date()) {
         throw new ForbiddenError('Session key is not active', { status: key.status }, 'SESSION_KEY_INACTIVE')
       }
-      if (key.tokenContract !== input.token) throw new ForbiddenError('Session key is not scoped to this token', undefined, 'SESSION_KEY_SCOPE')
+      if (key.tokenContract !== input.token)
+        throw new ForbiddenError('Session key is not scoped to this token', undefined, 'SESSION_KEY_SCOPE')
       if (new Big(amount.toString()).gt(key.perTxLimit.toString())) {
-        throw new ForbiddenError('Amount exceeds session key per-transaction limit', { perTxLimit: fromBaseUnits(key.perTxLimit.toFixed(0)) }, 'SESSION_KEY_LIMIT')
+        throw new ForbiddenError(
+          'Amount exceeds session key per-transaction limit',
+          { perTxLimit: fromBaseUnits(key.perTxLimit.toFixed(0)) },
+          'SESSION_KEY_LIMIT'
+        )
       }
       if (new Big(key.spent.toString()).plus(amount.toString()).gt(key.totalLimit.toString())) {
         throw new ForbiddenError('Amount exceeds session key remaining allowance', undefined, 'SESSION_KEY_LIMIT')
