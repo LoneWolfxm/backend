@@ -1,5 +1,7 @@
 # RemitPulse Backend
 
+[![CI](https://github.com/Remitpulse/backend/actions/workflows/ci.yml/badge.svg)](https://github.com/Remitpulse/backend/actions/workflows/ci.yml)
+
 Passkey smart wallets, a sponsored Soroban relay/paymaster, and SEP-10/SEP-24 remittance
 corridors with FX quoting, on Stellar.
 
@@ -47,6 +49,9 @@ Based on backend architecture from: https://github.com/stellar/smart-wallet-demo
   `Signature: t=<unix>, s=<base64 ed25519 sig>` header against the `SIGNING_KEY` published in its
   `stellar.toml` (the convention used by Stellar's Anchor Platform), rejecting stale or unsigned
   callbacks when `WEBHOOK_REQUIRE_SIGNATURE=true`.
+- **Error reporting.** Setting `SENTRY_DSN` reports unhandled 5xx errors, uncaught exceptions and
+  unhandled promise rejections to Sentry; leaving it blank disables reporting entirely (the
+  default) with no other behavior change.
 
 ## Known limitations
 
@@ -96,12 +101,19 @@ npm run dev            # tsx watch src/server.ts, http://localhost:8080
 - Raw OpenAPI document: `http://localhost:8080/openapi.json` (or `npm run openapi:export` to
   write `openapi.json` to disk without starting the server)
 
-### Tests
+### Tests, linting and formatting
 
 ```bash
-npm test          # vitest run — needs DATABASE_URL reachable (see test/setup-env.ts for defaults)
+npm test              # vitest run — needs DATABASE_URL reachable (see test/setup-env.ts for defaults)
+npm run test:coverage # same, with a v8 coverage report (text + coverage/index.html)
 npm run type-check
+npm run lint           # eslint; npm run lint:fix to auto-fix
+npm run format:check   # prettier --check; npm run format to rewrite in place
 ```
+
+CI (`.github/workflows/ci.yml`) runs all of the above against a Postgres service container on
+every push to `main` and every pull request, plus a separate job that builds the production
+Docker image.
 
 ### Docker
 
@@ -128,17 +140,25 @@ how you'd run them against a managed database in production.
 | `/v1/wallet` | Smart wallet deployment, contract auth payloads, relay, payments |
 | `/v1/wallet/session-keys` | Issue/list/revoke scoped Ed25519 session keys |
 | `/v1/paymaster` | Sponsorship policy status, fee-bump of a signed transaction |
-| `/v1/corridors`, `/v1/admin/corridors` | List/get corridors; admin pricing & availability updates |
+| `/v1/corridors`, `/v1/admin/corridors` | List/get corridors; admin create/update pricing & availability |
 | `/v1/anchors` | SEP-10 auth, SEP-24 deposit/withdraw initiation, anchor webhook |
-| `/v1/remittances` | List/get the current user's transfers, force a status re-sync |
+| `/v1/remittances` | Paginated list/get of the current user's transfers, force a status re-sync |
 | `/v1/fx` | Reference FX rates, corridor fee/amount quotes |
 
 Full request/response schemas (generated from the same Zod schemas the routes validate against,
 so they can't drift) are in Swagger UI at `/docs`. All successful responses are wrapped as
-`{ "data": ... }`; errors as `{ "error": { "code", "message", "details?" } }`.
+`{ "data": ... }`; errors as `{ "error": { "code", "message", "details?" } }`. A Prisma
+not-found/unique/foreign-key error that reaches the error handler unmapped is itself translated
+into the matching 404/409/400 rather than leaking as a 500.
+
+`GET /v1/remittances` uses keyset pagination: `?limit=20&cursor=<id>`, returning
+`{ "data": { "items": [...], "nextCursor": "<id>" | null } }` — pass the previous response's
+`nextCursor` to fetch the next page.
 
 Authentication: `Authorization: Bearer <JWT>` (issued by `/v1/auth/passkey/*`) for user routes,
-`x-api-key: <key>` (one of `ADMIN_API_KEYS`) for `/v1/admin/*`.
+`x-api-key: <key>` (one of `ADMIN_API_KEYS`) for `/v1/admin/*`. General endpoints are capped at
+`RATE_LIMIT_MAX` requests per `RATE_LIMIT_WINDOW_MS`; endpoints that spend relayer/paymaster funds
+or hit anchors use the tighter `SENSITIVE_RATE_LIMIT_MAX`.
 
 ## Contract deployment key bindings
 
