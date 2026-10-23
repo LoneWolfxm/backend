@@ -1,7 +1,23 @@
+import { initSentry } from './config/sentry'
+
+initSentry()
+
 import { createApp } from './app'
 import { prisma } from './config/database'
 import { env } from './config/env'
 import { logger } from './config/logger'
+import { Sentry, sentryEnabled } from './config/sentry'
+
+process.on('uncaughtException', error => {
+  logger.fatal({ err: error }, 'Uncaught exception')
+  if (sentryEnabled) Sentry.captureException(error)
+  process.exit(1)
+})
+process.on('unhandledRejection', reason => {
+  logger.fatal({ err: reason }, 'Unhandled promise rejection')
+  if (sentryEnabled) Sentry.captureException(reason)
+  process.exit(1)
+})
 
 const app = createApp()
 

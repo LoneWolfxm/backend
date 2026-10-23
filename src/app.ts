@@ -20,6 +20,7 @@ import { sessionKeysRouter } from './api/session-keys/routes'
 import { walletRouter } from './api/wallet/routes'
 import { env } from './config/env'
 import { logger } from './config/logger'
+import { Sentry, sentryEnabled } from './config/sentry'
 
 export function createApp(): Express {
   const app = express()
@@ -55,6 +56,7 @@ export function createApp(): Express {
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi))
 
   app.use(notFoundHandler)
+  if (sentryEnabled) Sentry.setupExpressErrorHandler(app)
   app.use(errorHandler)
 
   return app

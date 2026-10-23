@@ -32,6 +32,7 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
     "@prisma/client": "^6.19.3",
+    "@sentry/node": "^11.9.0",
     "@simplewebauthn/server": "^13.3.3",
     "@stellar/stellar-sdk": "^14.6.1",
     "big.js": "^7.0.1",
