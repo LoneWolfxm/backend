@@ -1,5 +1,8 @@
+import { Prisma } from '@prisma/client'
+
 import { prisma } from '../../config/database'
-import { z } from '../../lib/zod'
+import { ConflictError } from '../../errors'
+import { z, zAccountId } from '../../lib/zod'
 import { ApiRouter } from '../core/router'
 import { getCorridor, invalidateCorridorCache, serializeCorridor } from './service'
 
@@ -46,6 +49,59 @@ corridorsRouter.get({
 })
 
 export const adminCorridorsRouter = new ApiRouter('/v1/admin/corridors')
+
+adminCorridorsRouter.post({
+  path: '',
+  summary: 'Create a remittance corridor',
+  tags: ['Admin'],
+  auth: 'admin',
+  status: 201,
+  body: z.object({
+    code: z
+      .string()
+      .min(2)
+      .max(12)
+      .regex(/^[A-Z0-9]+$/, 'must be uppercase alphanumeric')
+      .openapi({ example: 'BRLA' }),
+    name: z.string().min(1).max(100),
+    assetCode: z.string().min(1).max(12),
+    assetIssuer: zAccountId,
+    fiatCurrency: z
+      .string()
+      .length(3)
+      .regex(/^[A-Z]+$/, 'must be an ISO-4217 code')
+      .openapi({ example: 'BRL' }),
+    anchorDomain: z.string().min(3),
+    markupBps: z.number().int().min(0).max(2_000).default(0),
+    fixedFee: z
+      .string()
+      .regex(/^\d+(\.\d{1,7})?$/)
+      .default('0'),
+    minAmount: z
+      .string()
+      .regex(/^\d+(\.\d{1,7})?$/)
+      .default('0'),
+    maxAmount: z
+      .string()
+      .regex(/^\d+(\.\d{1,7})?$/)
+      .nullable()
+      .default(null),
+  }),
+  response: CorridorSchema,
+  errors: { 409: 'Corridor code already exists' },
+  handler: async ({ body }) => {
+    try {
+      const corridor = await prisma.corridor.create({ data: body })
+      invalidateCorridorCache()
+      return serializeCorridor(corridor)
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictError(`Corridor ${body.code} already exists`)
+      }
+      throw error
+    }
+  },
+})
 
 adminCorridorsRouter.patch({
   path: '/:code',

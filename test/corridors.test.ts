@@ -39,3 +39,36 @@ describe('GET /v1/corridors', () => {
     expect(response.status).toBe(404)
   })
 })
+
+describe('POST /v1/admin/corridors', () => {
+  const newCode = `NEW${randomUUID().slice(0, 4).toUpperCase()}`
+  const body = {
+    code: newCode,
+    name: 'New Corridor',
+    assetCode: newCode,
+    assetIssuer: 'GCUZ37M45SEMGYFYYZE7IBTS3ISKGPDLFRNHS73ORSTMNYM64NLEQO76',
+    fiatCurrency: 'USD',
+    anchorDomain: 'testanchor.stellar.org',
+  }
+
+  afterAll(async () => {
+    await prisma.corridor.deleteMany({ where: { code: newCode } })
+  })
+
+  it('rejects requests without a valid admin API key', async () => {
+    const response = await request(app).post('/v1/admin/corridors').send(body)
+    expect(response.status).toBe(403)
+  })
+
+  it('creates a corridor for a valid admin key', async () => {
+    const response = await request(app).post('/v1/admin/corridors').set('x-api-key', 'test-admin-key').send(body)
+    expect(response.status).toBe(201)
+    expect(response.body.data.code).toBe(newCode)
+    expect(response.body.data.isActive).toBe(true)
+  })
+
+  it('409s when the corridor code already exists', async () => {
+    const response = await request(app).post('/v1/admin/corridors').set('x-api-key', 'test-admin-key').send(body)
+    expect(response.status).toBe(409)
+  })
+})

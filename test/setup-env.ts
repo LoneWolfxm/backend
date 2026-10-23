@@ -21,3 +21,5 @@ process.env.PAYMASTER_SECRET_KEY ??= Keypair.random().secret()
 
 process.env.WEBAUTHN_RP_ID ??= 'localhost'
 process.env.WEBAUTHN_ORIGINS ??= 'http://localhost:5173'
+
+process.env.ADMIN_API_KEYS ??= 'test-admin-key'
