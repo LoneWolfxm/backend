@@ -29,6 +29,10 @@ const EnvSchema = z.object({
   CORS_ORIGINS: csv,
   TRUST_PROXY: z.coerce.number().int().min(0).default(0),
 
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
+  SENSITIVE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+
   DATABASE_URL: z.string().min(1),
 
   // Admin API keys accepted in the x-api-key header (comma separated)

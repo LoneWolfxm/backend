@@ -1,6 +1,7 @@
 import type { Request } from 'express'
 import rateLimit from 'express-rate-limit'
 
+import { env } from '../../../config/env'
 import { TooManyRequestsError } from '../../../errors'
 
 const keyByUserOrIp = (req: Request): string => req.auth?.userId ?? req.ip ?? 'unknown'
@@ -10,12 +11,18 @@ const handler = (): never => {
 }
 
 /** General API limiter. */
-export const apiRateLimit = rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false, handler })
+export const apiRateLimit = rateLimit({
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.RATE_LIMIT_MAX,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler,
+})
 
 /** Tighter limiter for endpoints that spend money (relay, fee-bump) or hit anchors. */
 export const sensitiveRateLimit = rateLimit({
-  windowMs: 60_000,
-  limit: 20,
+  windowMs: env.RATE_LIMIT_WINDOW_MS,
+  limit: env.SENSITIVE_RATE_LIMIT_MAX,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: keyByUserOrIp,
