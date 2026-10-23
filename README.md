@@ -1,1 +1,151 @@
-# backend
+# RemitPulse Backend
+
+Passkey smart wallets, a sponsored Soroban relay/paymaster, and SEP-10/SEP-24 remittance
+corridors with FX quoting, on Stellar.
+
+Based on backend architecture from: https://github.com/stellar/smart-wallet-demo-app
+
+## What this service does
+
+- **Passkey smart wallets** — WebAuthn (ES256/P-256) enrollment and login (`/v1/auth`), smart
+  wallet deployment and a two-phase relay for Soroban contract calls (`/v1/wallet`), so users
+  never hold a seed phrase or pay network fees directly.
+- **Scoped session keys** — Ed25519 signers a user's wallet can authorize for low-value payments
+  within per-transaction and total limits, without a passkey prompt each time (`/v1/wallet/session-keys`).
+- **Paymaster / fee-bump sponsorship** — wraps user transactions in a fee-bump signed by a
+  sponsor account, enforcing a contract allow-list, a per-transaction fee cap and a rolling daily
+  budget per user, with optional on-chain subsidy-allowance checks (`/v1/paymaster`).
+- **Remittance corridors** — configurable fiat corridors (`USDC`/`EURC`/`ARST`/`BRLA` seeded by
+  default) with RemitPulse's markup/fee schedule (`/v1/corridors`, admin via `/v1/admin/corridors`).
+- **SEP-10 / SEP-24 anchor integration** — authenticates with each corridor's anchor and starts
+  interactive deposit/withdrawal flows, with a webhook receiver and full lifecycle tracking in
+  Postgres (`/v1/anchors`, `/v1/remittances`).
+- **FX rates & fee quoting** — live reference rates and a corridor fee/amount calculator
+  (`/v1/fx`).
+
+## Architecture notes
+
+- **Contract auth payloads.** `POST /v1/wallet/invocations` simulates a Soroban call against the
+  user's smart wallet, extracts the `SorobanAuthorizationEntry` it must sign and returns the
+  exact 32-byte payload (`sha256(HashIdPreimageSorobanAuthorization)`); the client signs it with
+  either a WebAuthn assertion (passkey) or a raw Ed25519 signature (session key), and
+  `POST /v1/wallet/invocations/:id/submit` attaches it, re-simulates, signs as the relayer,
+  fee-bumps via the paymaster and submits.
+- **Anchor custody accounts.** Classic SEP-10/SEP-24 anchors transact with plain Stellar (`G...`)
+  accounts, not Soroban contract addresses. For each user/corridor pair RemitPulse deterministically
+  derives a dedicated Ed25519 "custody" account (`HMAC-SHA256(ANCHOR_CUSTODY_SEED, userId)`,
+  distinct from both `RELAYER_SECRET_KEY` and the user's own smart wallet) and funds/sponsors its
+  reserve and trustline on demand. No extra key material is stored in the database. **Moving the
+  corridor asset between this custody account and the user's smart wallet is currently a manual
+  step** (via `POST /v1/wallet/payments`) — see "Known limitations" below.
+- **Lifecycle tracking.** Every SEP-24 transaction is mirrored into `remittance_transactions`,
+  normalised from the anchor's raw status into `incomplete | pending_user_transfer |
+  pending_anchor | completed | failed`, with an append-only `remittance_events` audit trail
+  populated from initiation, the anchor's webhook callback, or an explicit
+  `POST /v1/remittances/:id/sync` poll.
+- **Webhook authenticity.** `POST /v1/anchors/:code/webhook` verifies the anchor's
+  `Signature: t=<unix>, s=<base64 ed25519 sig>` header against the `SIGNING_KEY` published in its
+  `stellar.toml` (the convention used by Stellar's Anchor Platform), rejecting stale or unsigned
+  callbacks when `WEBHOOK_REQUIRE_SIGNATURE=true`.
+
+## Known limitations
+
+- **SEP-45 (contract-account web auth) is not implemented.** Anchors that require authentication
+  directly from a Soroban smart-wallet address (rather than a classic account) are not yet
+  supported; this service authenticates with the per-user custody account described above instead.
+- **Funding withdrawals is manual.** Before completing a withdrawal's hosted anchor form, move the
+  corridor asset from the user's smart wallet into the returned custody `account` yourself (e.g.
+  via `POST /v1/wallet/payments`); this service does not yet automate that transfer.
+- **Reference anchor domain.** Seeded corridors point at `testanchor.stellar.org` (Stellar's public
+  SEP test anchor) with randomly generated, unfunded placeholder asset issuers — replace both via
+  `PATCH /v1/admin/corridors/:code` before connecting to a production anchor.
+
+## Getting started
+
+### Prerequisites
+
+- Node.js 20+ (`.nvmrc` pins 22)
+- PostgreSQL 14+
+- A funded Stellar account for `RELAYER_SECRET_KEY` and one for `PAYMASTER_SECRET_KEY`
+  (testnet: fund via https://friendbot.stellar.org)
+- The compiled account-factory and subsidy contracts from
+  [`stellar/smart-wallet-demo-app`](https://github.com/stellar/smart-wallet-demo-app) deployed to
+  your target network, for `ACCOUNT_CONTRACT_ID` / `SUBSIDY_CONTRACT_ID`
+
+### Environment variables
+
+```bash
+cp .env.example .env
+```
+
+Fill in every value — `src/config/env.ts` validates them at boot (via Zod) and the process exits
+immediately with a readable error if anything is missing or malformed. See the comments in
+`.env.example` for what each group of variables controls; the "Architecture notes" above explain
+`ANCHOR_CUSTODY_SEED`, `ENCRYPTION_KEY` and the paymaster policy variables in more detail.
+
+### Local development (without Docker)
+
+```bash
+npm install
+npm run db:migrate     # applies prisma/schema.prisma to DATABASE_URL
+npm run db:seed        # seeds the USDC/EURC/ARST/BRLA corridors
+npm run dev            # tsx watch src/server.ts, http://localhost:8080
+```
+
+- Swagger UI: `http://localhost:8080/docs`
+- Raw OpenAPI document: `http://localhost:8080/openapi.json` (or `npm run openapi:export` to
+  write `openapi.json` to disk without starting the server)
+
+### Tests
+
+```bash
+npm test          # vitest run — needs DATABASE_URL reachable (see test/setup-env.ts for defaults)
+npm run type-check
+```
+
+### Docker
+
+```bash
+cp .env.example .env    # fill in real values; DATABASE_URL is overridden by docker-compose
+docker compose build
+docker compose up -d postgres
+docker compose run --rm backend npx prisma migrate deploy
+docker compose run --rm backend npx prisma db seed
+docker compose up -d backend
+```
+
+The `Dockerfile` is a multi-stage build (`npm run build` under Node 22, then a slim runtime image
+running `node dist/server.js` as the non-root `node` user). `docker-compose.yml` adds a Postgres
+16 service; migrations are run explicitly (above) rather than on every container start, matching
+how you'd run them against a managed database in production.
+
+## API reference
+
+| Prefix | Purpose |
+| --- | --- |
+| `/v1/health` | Liveness/readiness (DB connectivity) |
+| `/v1/auth` | Passkey (WebAuthn) enrollment, login, session |
+| `/v1/wallet` | Smart wallet deployment, contract auth payloads, relay, payments |
+| `/v1/wallet/session-keys` | Issue/list/revoke scoped Ed25519 session keys |
+| `/v1/paymaster` | Sponsorship policy status, fee-bump of a signed transaction |
+| `/v1/corridors`, `/v1/admin/corridors` | List/get corridors; admin pricing & availability updates |
+| `/v1/anchors` | SEP-10 auth, SEP-24 deposit/withdraw initiation, anchor webhook |
+| `/v1/remittances` | List/get the current user's transfers, force a status re-sync |
+| `/v1/fx` | Reference FX rates, corridor fee/amount quotes |
+
+Full request/response schemas (generated from the same Zod schemas the routes validate against,
+so they can't drift) are in Swagger UI at `/docs`. All successful responses are wrapped as
+`{ "data": ... }`; errors as `{ "error": { "code", "message", "details?" } }`.
+
+Authentication: `Authorization: Bearer <JWT>` (issued by `/v1/auth/passkey/*`) for user routes,
+`x-api-key: <key>` (one of `ADMIN_API_KEYS`) for `/v1/admin/*`.
+
+## Contract deployment key bindings
+
+This service assumes the account-factory and subsidy contract ABIs documented in
+`src/interfaces/contracts/bindings.ts` — see that file for the exact Rust signatures expected
+(`deploy`, `add_session_key`, `revoke_session_key`, `__check_auth`, `allowance`, `claim`). If your
+deployed WASM differs, that is the only file you need to change. Point `ACCOUNT_CONTRACT_ID` and
+`SUBSIDY_CONTRACT_ID` at your deployed contract addresses on the network named by
+`STELLAR_NETWORK_PASSPHRASE`; `RELAY_ALLOWED_CONTRACTS` can list any additional contracts (beyond
+those two and active corridor asset contracts) users may invoke through the relay.
