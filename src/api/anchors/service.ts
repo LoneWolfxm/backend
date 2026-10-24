@@ -5,10 +5,12 @@ import { prisma } from '../../config/database'
 import { BadRequestError, NotFoundError } from '../../errors'
 import { deriveAnchorKeypair, ensureAnchorAccount } from '../../interfaces/anchors/custody'
 import { authenticateWithAnchor } from '../../interfaces/anchors/sep10'
+import { authenticateWithAnchorSep45, supportsSep45 } from '../../interfaces/anchors/sep45'
 import type { Sep24Transaction } from '../../interfaces/anchors/sep24'
 import { fetchTransaction, startDeposit, startWithdrawal, verifyWebhookSignature } from '../../interfaces/anchors/sep24'
 import { decrypt, encrypt } from '../../lib/crypto'
 import { getCorridor } from '../corridors/service'
+import { preparePayment } from '../wallet/invocation-service'
 
 function mapAnchorStatus(status: string): RemittanceStatus {
   switch (status) {
@@ -37,13 +39,21 @@ function mapAnchorStatus(status: string): RemittanceStatus {
   }
 }
 
-/** Ensures a live SEP-10 session with the corridor's anchor, authenticating if needed. */
+/**
+ * Ensures a live anchor session, authenticating if needed.
+ *
+ * When the anchor's stellar.toml advertises SEP-45 support we authenticate as the user's
+ * smart-wallet contract address directly; otherwise we fall back to classic SEP-10 using the
+ * deterministically-derived custody account.
+ */
 async function ensureAnchorSession(userId: string, corridorId: string, anchorDomain: string, account: string) {
   const existing = await prisma.anchorSession.findUnique({ where: { userId_corridorId_account: { userId, corridorId, account } } })
   if (existing && existing.expiresAt > new Date(Date.now() + 60_000)) return decrypt(existing.encryptedToken)
 
   const keypair = deriveAnchorKeypair(userId)
-  const { token, expiresAt } = await authenticateWithAnchor(anchorDomain, keypair)
+  const { token, expiresAt } = (await supportsSep45(anchorDomain))
+    ? await authenticateWithAnchorSep45(anchorDomain, userId)
+    : await authenticateWithAnchor(anchorDomain, keypair)
   await prisma.anchorSession.upsert({
     where: { userId_corridorId_account: { userId, corridorId, account } },
     create: { userId, corridorId, account, encryptedToken: encrypt(token), expiresAt },
@@ -55,8 +65,10 @@ async function ensureAnchorSession(userId: string, corridorId: string, anchorDom
 export async function authenticate(userId: string, code: string) {
   const corridor = await getCorridor(code)
   const keypair = deriveAnchorKeypair(userId)
-  const token = await ensureAnchorSession(userId, corridor.id, corridor.anchorDomain, keypair.publicKey())
-  return { account: keypair.publicKey(), anchorDomain: corridor.anchorDomain, authenticated: Boolean(token) }
+  const sep45 = await supportsSep45(corridor.anchorDomain)
+  const account = sep45 ? await getSmartWalletAddress(userId) : keypair.publicKey()
+  const token = await ensureAnchorSession(userId, corridor.id, corridor.anchorDomain, account)
+  return { account, anchorDomain: corridor.anchorDomain, authMethod: sep45 ? 'sep45' : 'sep10', authenticated: Boolean(token) }
 }
 
 async function initiate(userId: string, code: string, kind: 'deposit' | 'withdrawal', amount?: string) {
@@ -93,7 +105,52 @@ async function initiate(userId: string, code: string, kind: 'deposit' | 'withdra
 }
 
 export const initiateDeposit = (userId: string, code: string, amount?: string) => initiate(userId, code, 'deposit', amount)
-export const initiateWithdrawal = (userId: string, code: string, amount?: string) => initiate(userId, code, 'withdrawal', amount)
+
+/**
+ * Prepares the funding transfer for a SEP-24 withdrawal.
+ *
+ * The anchor debits the corridor asset from the per-user custody account, so before the
+ * interactive flow is usable the client must move `amount` from the user's smart wallet into
+ * that custody address. We prepare (but do not submit) that wallet payment and surface the
+ * resulting `PreparedInvocation` so the client can sign it and POST it to
+ * `/v1/wallet/invocations/:id/submit`.
+ */
+export async function prepareWithdrawalFunding(userId: string, code: string, amount: string) {
+  if (!amount) throw new BadRequestError('amount is required to fund a withdrawal')
+  const corridor = await getCorridor(code)
+  const keypair = deriveAnchorKeypair(userId)
+  const asset = new Asset(corridor.assetCode, corridor.assetIssuer)
+
+  await ensureAnchorAccount(keypair, asset)
+
+  const prepared = await preparePayment(userId, {
+    destination: keypair.publicKey(),
+    assetCode: corridor.assetCode,
+    assetIssuer: corridor.assetIssuer,
+    amount,
+  })
+
+  return {
+    account: keypair.publicKey(),
+    custodyAddress: keypair.publicKey(),
+    assetCode: corridor.assetCode,
+    assetIssuer: corridor.assetIssuer,
+    amount,
+    invocationId: prepared.invocationId,
+    preparedInvocation: prepared,
+    submitPath: `/v1/wallet/invocations/${prepared.invocationId}/submit`,
+  }
+}
+
+/**
+ * Starts the SEP-24 interactive withdrawal flow. Idempotent per (user, corridor, anchorTxId):
+ * callers should only invoke this once the funding transfer has landed in the custody account.
+ */
+export async function initiateWithdrawal(userId: string, code: string, amount?: string) {
+  const result = await initiate(userId, code, 'withdrawal', amount)
+  const funding = amount ? await prepareWithdrawalFunding(userId, code, amount) : undefined
+  return { ...result, funding }
+}
 
 async function recordUpdate(transactionId: string, source: 'webhook' | 'poll', remote: Sep24Transaction) {
   const current = await prisma.remittanceTransaction.findUniqueOrThrow({ where: { id: transactionId } })
@@ -148,4 +205,41 @@ export async function syncTransaction(userId: string, transactionId: string) {
   const token = await ensureAnchorSession(userId, transaction.corridorId, transaction.corridor.anchorDomain, keypair.publicKey())
   const remote = await fetchTransaction(transaction.corridor.anchorDomain, token, transaction.anchorTxId)
   return recordUpdate(transactionId, 'poll', remote)
+}
+
+/**
+ * Syncs a single transaction by id without requiring the caller to know the owning user.
+ * Intended for the background poller; errors are the caller's responsibility to log.
+ */
+export async function syncTransactionById(transactionId: string) {
+  const transaction = await prisma.remittanceTransaction.findUnique({ where: { id: transactionId } })
+  if (!transaction) throw new NotFoundError('Remittance transaction')
+  return syncTransaction(transaction.userId, transactionId)
+}
+
+/**
+ * Finds non-terminal transactions whose `updatedAt` is older than `staleAfterMs` and syncs them,
+ * one small batch at a time. Failures are logged per-transaction and never abort the batch.
+ */
+export async function pollStaleTransactions(options: { staleAfterMs: number; batchSize?: number }) {
+  const { staleAfterMs, batchSize = 10 } = options
+  const cutoff = new Date(Date.now() - staleAfterMs)
+
+  const stale = await prisma.remittanceTransaction.findMany({
+    where: { status: { notIn: ['completed', 'failed'] }, updatedAt: { lt: cutoff } },
+    orderBy: { updatedAt: 'asc' },
+    take: batchSize,
+    select: { id: true },
+  })
+
+  let synced = 0
+  for (const { id } of stale) {
+    try {
+      await syncTransactionById(id)
+      synced += 1
+    } catch (error) {
+      console.error(`[remittance-poller] failed to sync transaction ${id}`, error)
+    }
+  }
+  return { scanned: stale.length, synced }
 }
