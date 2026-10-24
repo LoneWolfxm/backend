@@ -4,12 +4,6 @@ import { requestJson } from '../../lib/http-client'
 import { Big } from '../../lib/money'
 import { getCorridor } from '../corridors/service'
 
-let staticRates: Record<string, number> | undefined
-function parseStaticRates(): Record<string, number> {
-  staticRates ??= JSON.parse(env.FX_STATIC_RATES) as Record<string, number>
-  return staticRates
-}
-
 let httpCache: { at: number; base: string; rates: Record<string, number> } | undefined
 
 /** Units of each fiat currency per 1 unit of `base`, e.g. { USD: 1, EUR: 0.92, ARS: 1050 }. */
@@ -28,7 +22,7 @@ export async function getReferenceRates(base = 'USD'): Promise<Record<string, nu
   }
 
   // 'static' (also the fallback reference for 'sep38', which quotes per-corridor rather than per-base-currency)
-  const rates = parseStaticRates()
+  const rates = env.FX_STATIC_RATES
   const baseRate = rates[base.toUpperCase()]
   if (!baseRate) throw new UpstreamError('fx', `No static rate configured for base currency ${base}`)
   return Object.fromEntries(Object.entries(rates).map(([currency, unitsPerUsd]) => [currency, unitsPerUsd / baseRate]))

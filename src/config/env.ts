@@ -21,6 +21,19 @@ const bool = z
 const stellarSecret = z.string().refine(StrKey.isValidEd25519SecretSeed, 'must be a valid Stellar secret seed (S...)')
 const contractId = z.string().refine(StrKey.isValidContract, 'must be a valid contract id (C...)')
 
+const staticRates = z
+  .string()
+  .default('{"USD":1,"EUR":0.92,"ARS":1050,"BRL":5.6}')
+  .transform((value, ctx) => {
+    try {
+      return JSON.parse(value) as unknown
+    } catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be valid JSON' })
+      return z.NEVER
+    }
+  })
+  .pipe(z.record(z.string().length(3), z.number().positive()))
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(8080),
@@ -98,7 +111,7 @@ const EnvSchema = z.object({
   // FX
   FX_PROVIDER: z.enum(['static', 'sep38', 'http']).default('static'),
   // JSON map of fiat code -> units per 1 USD, used by the static provider and as a fallback
-  FX_STATIC_RATES: z.string().default('{"USD":1,"EUR":0.92,"ARS":1050,"BRL":5.6}'),
+  FX_STATIC_RATES: staticRates,
   // HTTP provider: GET {FX_REFERENCE_URL}?base=USD returns { rates: { EUR: 0.92, ... } }
   FX_REFERENCE_URL: z.string().url().optional(),
   FX_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
