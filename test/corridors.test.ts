@@ -5,9 +5,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { createApp } from '../src/app'
 import { prisma } from '../src/config/database'
+import { corridorTokenContract } from '../src/api/corridors/service'
 
 const app = createApp()
 const code = `TST${randomUUID().slice(0, 4).toUpperCase()}`
+
+const SEEDED_CORRIDOR_CODES = ['USDC', 'EURC', 'ARST', 'BRLA']
+const STELLAR_PUBLIC_KEY = /^G[A-Z2-7]{55}$/
 
 beforeAll(async () => {
   await prisma.corridor.create({
@@ -37,6 +41,30 @@ describe('GET /v1/corridors', () => {
   it('404s for an unknown corridor code', async () => {
     const response = await request(app).get('/v1/corridors/DOESNOTEXIST')
     expect(response.status).toBe(404)
+  })
+})
+
+describe('seeded corridors', () => {
+  it('have real (non-placeholder) asset issuers', async () => {
+    const corridors = await prisma.corridor.findMany({ where: { code: { in: SEEDED_CORRIDOR_CODES } } })
+    expect(corridors.map((corridor) => corridor.code).sort()).toEqual([...SEEDED_CORRIDOR_CODES].sort())
+
+    for (const corridor of corridors) {
+      expect(corridor.assetIssuer, `${corridor.code} assetIssuer`).toMatch(STELLAR_PUBLIC_KEY)
+      expect(corridor.anchorDomain, `${corridor.code} anchorDomain`).toBeTruthy()
+    }
+  })
+
+  it('expose a derived asset contractId via GET /v1/corridors', async () => {
+    const response = await request(app).get('/v1/corridors')
+    expect(response.status).toBe(200)
+
+    for (const corridorCode of SEEDED_CORRIDOR_CODES) {
+      const corridor = response.body.data.find((item: { code: string }) => item.code === corridorCode)
+      expect(corridor, `${corridorCode} corridor`).toBeDefined()
+      expect(corridor.asset.contractId, `${corridorCode} contractId`).toBeTruthy()
+      expect(corridor.asset.contractId).toBe(corridorTokenContract(corridor.assetCode, corridor.assetIssuer))
+    }
   })
 })
 
