@@ -1,4 +1,4 @@
-import { OpenApiGeneratorV3, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
+import { OpenApiGeneratorV31, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
 
 import { env } from '../../config/env'
 import { z } from '../../lib/zod'
@@ -29,10 +29,10 @@ export const ErrorResponseSchema = registry.register(
   })
 )
 
-let cached: ReturnType<OpenApiGeneratorV3['generateDocument']> | undefined
+let cached: ReturnType<OpenApiGeneratorV31['generateDocument']> | undefined
 
-export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV3['generateDocument']> {
-  cached ??= new OpenApiGeneratorV3(registry.definitions).generateDocument({
+export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generateDocument']> {
+  cached ??= new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: '3.0.3',
     info: {
       title: 'RemitPulse Backend API',

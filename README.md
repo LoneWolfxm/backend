@@ -62,7 +62,6 @@ Based on backend architecture from: https://github.com/stellar/smart-wallet-demo
   small batches (one tick every `REMITTANCE_POLL_INTERVAL_SECONDS`), logging per-transaction
   failures without aborting the tick. This keeps statuses fresh even when an anchor's webhook
   delivery fails and the client never retries the manual sync.
-=======
 - **Webhook authenticity.** `POST /v1/anchors/:code/webhook` verifies the anchor's
   `Signature: t=<unix>, s=<base64 ed25519 sig>` header against the `SIGNING_KEY` published in its
   `stellar.toml` (the convention used by Stellar's Anchor Platform), rejecting stale or unsigned
@@ -76,6 +75,11 @@ Based on backend architecture from: https://github.com/stellar/smart-wallet-demo
 - **Reference anchor domain.** Seeded corridors point at `testanchor.stellar.org` (Stellar's public
   SEP test anchor) with randomly generated, unfunded placeholder asset issuers — replace both via
   `PATCH /v1/admin/corridors/:code` before connecting to a production anchor.
+- **Seeded corridor issuers.** Each seeded corridor's `assetIssuer` and `anchorDomain` come from
+  the real anchor's published `stellar.toml` (`CURRENCIES` section) for the anchor(s) RemitPulse
+  integrates with, so `asset.contractId` resolves to the actual Stellar Asset Contract. Both can
+  still be overridden per corridor via `PATCH /v1/admin/corridors/:code` (e.g. when switching to a
+  different anchor or network).
 
 ## Getting started
 
@@ -107,7 +111,7 @@ more detail.
 ```bash
 npm install
 npm run db:migrate     # applies prisma/schema.prisma to DATABASE_URL
-npm run db:seed        # seeds the USDC/EURC/ARST/BRLA corridors
+npm run db:seed        # seeds the USDC/EURC/ARST/BRLA corridors with their real anchor issuers
 npm run dev            # tsx watch src/server.ts, http://localhost:8080
 ```
 

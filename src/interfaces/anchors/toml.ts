@@ -1,6 +1,13 @@
 import { env } from '../../config/env'
 import { UpstreamError } from '../../errors'
 
+export type AnchorCurrency = {
+  code: string
+  issuer: string
+  status?: string
+  display?: string
+}
+
 export type AnchorToml = {
   signingKey?: string
   webAuthEndpoint?: string
@@ -10,6 +17,7 @@ export type AnchorToml = {
   webAuthContractId?: string
   transferServerSep24?: string
   quoteServer?: string
+  currencies: AnchorCurrency[]
 }
 
 let cache = new Map<string, { at: number; toml: AnchorToml }>()
@@ -17,7 +25,8 @@ const TOML_CACHE_MS = 5 * 60_000
 
 /**
  * Minimal SEP-1 (stellar.toml) reader: extracts the handful of top-level `KEY = "value"`
- * fields the anchor integration needs. Intentionally not a general TOML parser.
+ * fields the anchor integration needs, plus the `[[CURRENCIES]]` array entries.
+ * Intentionally not a general TOML parser.
  */
 function parseToml(text: string): AnchorToml {
   const get = (key: string): string | undefined => {
@@ -31,7 +40,35 @@ function parseToml(text: string): AnchorToml {
     webAuthContractId: get('WEB_AUTH_CONTRACT_ID'),
     transferServerSep24: get('TRANSFER_SERVER_SEP0024'),
     quoteServer: get('ANCHOR_QUOTE_SERVER'),
+    currencies: parseCurrencies(text),
   }
+}
+
+/**
+ * Parses the `[[CURRENCIES]]` array-of-tables blocks, returning each entry's `code` and
+ * `issuer` (plus `status`/`display` when present). Entries missing a code or issuer are skipped.
+ */
+function parseCurrencies(text: string): AnchorCurrency[] {
+  const currencies: AnchorCurrency[] = []
+  const blocks = text.split(/^\s*\[\[CURRENCIES\]\]\s*$/m).slice(1)
+  for (const block of blocks) {
+    // Only consider lines up to the next table header so we don't bleed into following sections.
+    const body = block.split(/^\s*\[/m)[0] ?? ''
+    const field = (key: string): string | undefined => {
+      const match = body.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, 'm'))
+      return match?.[1]
+    }
+    const code = field('code')
+    const issuer = field('issuer')
+    if (!code || !issuer) continue
+    const currency: AnchorCurrency = { code, issuer }
+    const status = field('status')
+    if (status) currency.status = status
+    const display = field('display')
+    if (display) currency.display = display
+    currencies.push(currency)
+  }
+  return currencies
 }
 
 /** Fetches and caches `https://{domain}/.well-known/stellar.toml` (SEP-1). */
