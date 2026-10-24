@@ -61,9 +61,11 @@ Based on backend architecture from: https://github.com/stellar/smart-wallet-demo
 - **Funding withdrawals is manual.** Before completing a withdrawal's hosted anchor form, move the
   corridor asset from the user's smart wallet into the returned custody `account` yourself (e.g.
   via `POST /v1/wallet/payments`); this service does not yet automate that transfer.
-- **Reference anchor domain.** Seeded corridors point at `testanchor.stellar.org` (Stellar's public
-  SEP test anchor) with randomly generated, unfunded placeholder asset issuers — replace both via
-  `PATCH /v1/admin/corridors/:code` before connecting to a production anchor.
+- **Seeded corridor issuers.** Each seeded corridor's `assetIssuer` and `anchorDomain` come from
+  the real anchor's published `stellar.toml` (`CURRENCIES` section) for the anchor(s) RemitPulse
+  integrates with, so `asset.contractId` resolves to the actual Stellar Asset Contract. Both can
+  still be overridden per corridor via `PATCH /v1/admin/corridors/:code` (e.g. when switching to a
+  different anchor or network).
 
 ## Getting started
 
@@ -93,7 +95,7 @@ immediately with a readable error if anything is missing or malformed. See the c
 ```bash
 npm install
 npm run db:migrate     # applies prisma/schema.prisma to DATABASE_URL
-npm run db:seed        # seeds the USDC/EURC/ARST/BRLA corridors
+npm run db:seed        # seeds the USDC/EURC/ARST/BRLA corridors with their real anchor issuers
 npm run dev            # tsx watch src/server.ts, http://localhost:8080
 ```
 
