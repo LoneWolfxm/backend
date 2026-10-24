@@ -37,14 +37,32 @@ Based on backend architecture from: https://github.com/stellar/smart-wallet-demo
   accounts, not Soroban contract addresses. For each user/corridor pair RemitPulse deterministically
   derives a dedicated Ed25519 "custody" account (`HMAC-SHA256(ANCHOR_CUSTODY_SEED, userId)`,
   distinct from both `RELAYER_SECRET_KEY` and the user's own smart wallet) and funds/sponsors its
-  reserve and trustline on demand. No extra key material is stored in the database. **Moving the
-  corridor asset between this custody account and the user's smart wallet is currently a manual
-  step** (via `POST /v1/wallet/payments`) — see "Known limitations" below.
+  reserve and trustline on demand. No extra key material is stored in the database.
+- **Automated withdrawal funding.** `POST /v1/anchors/:code/withdraw` prepares the transfer that
+  moves the withdrawal `amount` from the user's smart wallet into the custody account the anchor
+  will debit, reusing the same invocation-relay machinery as `POST /v1/wallet/invocations`. The
+  response includes a `PreparedInvocation` (and the custody `account`); the client signs it with
+  the passkey (or a session key) and submits it via `POST /v1/wallet/invocations/:id/submit`. The
+  returned SEP-24 interactive URL is only usable once that transfer has landed — call
+  `POST /v1/anchors/:code/withdraw/:id/start` (idempotent) to begin the interactive flow after
+  submitting the funding invocation.
+- **Anchor web auth selection.** `authenticate`/`ensureAnchorSession` read the anchor's
+  `stellar.toml` and pick the auth scheme per anchor: if it advertises SEP-45
+  (`WEB_AUTH_CONTRACT_ID`), RemitPulse authenticates directly as the user's smart-wallet contract
+  address using a Soroban authorization entry (built and signed exactly like a wallet invocation);
+  otherwise it falls back to classic SEP-10 with the per-user custody account described above.
 - **Lifecycle tracking.** Every SEP-24 transaction is mirrored into `remittance_transactions`,
   normalised from the anchor's raw status into `incomplete | pending_user_transfer |
   pending_anchor | completed | failed`, with an append-only `remittance_events` audit trail
   populated from initiation, the anchor's webhook callback, or an explicit
   `POST /v1/remittances/:id/sync` poll.
+- **Background remittance poller.** A scheduled job in the server process periodically picks up
+  non-terminal `remittance_transactions` (`status` not in `completed`/`failed`) whose `updatedAt`
+  is older than `REMITTANCE_POLL_STALE_AFTER_SECONDS`, and calls `syncTransaction` for each in
+  small batches (one tick every `REMITTANCE_POLL_INTERVAL_SECONDS`), logging per-transaction
+  failures without aborting the tick. This keeps statuses fresh even when an anchor's webhook
+  delivery fails and the client never retries the manual sync.
+=======
 - **Webhook authenticity.** `POST /v1/anchors/:code/webhook` verifies the anchor's
   `Signature: t=<unix>, s=<base64 ed25519 sig>` header against the `SIGNING_KEY` published in its
   `stellar.toml` (the convention used by Stellar's Anchor Platform), rejecting stale or unsigned
@@ -55,12 +73,6 @@ Based on backend architecture from: https://github.com/stellar/smart-wallet-demo
 
 ## Known limitations
 
-- **SEP-45 (contract-account web auth) is not implemented.** Anchors that require authentication
-  directly from a Soroban smart-wallet address (rather than a classic account) are not yet
-  supported; this service authenticates with the per-user custody account described above instead.
-- **Funding withdrawals is manual.** Before completing a withdrawal's hosted anchor form, move the
-  corridor asset from the user's smart wallet into the returned custody `account` yourself (e.g.
-  via `POST /v1/wallet/payments`); this service does not yet automate that transfer.
 - **Reference anchor domain.** Seeded corridors point at `testanchor.stellar.org` (Stellar's public
   SEP test anchor) with randomly generated, unfunded placeholder asset issuers — replace both via
   `PATCH /v1/admin/corridors/:code` before connecting to a production anchor.
@@ -86,7 +98,9 @@ cp .env.example .env
 Fill in every value — `src/config/env.ts` validates them at boot (via Zod) and the process exits
 immediately with a readable error if anything is missing or malformed. See the comments in
 `.env.example` for what each group of variables controls; the "Architecture notes" above explain
-`ANCHOR_CUSTODY_SEED`, `ENCRYPTION_KEY` and the paymaster policy variables in more detail.
+`ANCHOR_CUSTODY_SEED`, `ENCRYPTION_KEY`, the paymaster policy variables and the background
+remittance poller (`REMITTANCE_POLL_INTERVAL_SECONDS`, `REMITTANCE_POLL_STALE_AFTER_SECONDS`) in
+more detail.
 
 ### Local development (without Docker)
 
@@ -141,7 +155,7 @@ how you'd run them against a managed database in production.
 | `/v1/wallet/session-keys` | Issue/list/revoke scoped Ed25519 session keys |
 | `/v1/paymaster` | Sponsorship policy status, fee-bump of a signed transaction |
 | `/v1/corridors`, `/v1/admin/corridors` | List/get corridors; admin create/update pricing & availability |
-| `/v1/anchors` | SEP-10 auth, SEP-24 deposit/withdraw initiation, anchor webhook |
+| `/v1/anchors` | SEP-10/SEP-45 auth, SEP-24 deposit/withdraw initiation (with automated funding), anchor webhook |
 | `/v1/remittances` | Paginated list/get of the current user's transfers, force a status re-sync |
 | `/v1/fx` | Reference FX rates, corridor fee/amount quotes |
 

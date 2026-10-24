@@ -4,6 +4,10 @@ import { UpstreamError } from '../../errors'
 export type AnchorToml = {
   signingKey?: string
   webAuthEndpoint?: string
+  /** SEP-45: contract account web auth endpoint (distinct from the classic SEP-10 endpoint). */
+  webAuthContractEndpoint?: string
+  /** SEP-45: the contract ID the anchor's web auth server accepts authorization entries for. */
+  webAuthContractId?: string
   transferServerSep24?: string
   quoteServer?: string
 }
@@ -23,6 +27,8 @@ function parseToml(text: string): AnchorToml {
   return {
     signingKey: get('SIGNING_KEY'),
     webAuthEndpoint: get('WEB_AUTH_ENDPOINT'),
+    webAuthContractEndpoint: get('WEB_AUTH_CONTRACT_ENDPOINT'),
+    webAuthContractId: get('WEB_AUTH_CONTRACT_ID'),
     transferServerSep24: get('TRANSFER_SERVER_SEP0024'),
     quoteServer: get('ANCHOR_QUOTE_SERVER'),
   }
