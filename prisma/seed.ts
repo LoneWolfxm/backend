@@ -66,4 +66,6 @@ main()
     console.error(error)
     process.exitCode = 1
   })
-  .finally(() => prisma.$disconnect())
+  .finally(async () => {
+    await prisma.$disconnect()
+  })

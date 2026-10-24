@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 RUN npx prisma generate
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
@@ -16,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY prisma ./prisma
+COPY prisma.config.ts ./
 RUN npx prisma generate
 COPY --from=build /app/dist ./dist
 
