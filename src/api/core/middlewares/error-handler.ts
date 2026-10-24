@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client'
 import type { NextFunction, Request, Response } from 'express'
-import { ZodError } from 'zod'
+import { ZodError, z } from 'zod'
 
 import { logger } from '../../../config/logger'
 import { AppError } from '../../../errors'
@@ -27,8 +27,10 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   const context = { requestId: req.requestId, method: req.method, url: req.originalUrl }
 
   if (err instanceof ZodError) {
+    // zod v4 removed `ZodError#flatten()`; `z.treeifyError` produces the same
+    // `{ formErrors, fieldErrors }` shape so the response contract stays stable.
     res.status(400).json({
-      error: { code: 'VALIDATION_ERROR', message: 'Request validation failed', details: err.flatten() },
+      error: { code: 'VALIDATION_ERROR', message: 'Request validation failed', details: z.treeifyError(err) },
     })
     return
   }

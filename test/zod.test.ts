@@ -17,6 +17,16 @@ describe('zAccountId', () => {
   it('rejects garbage', () => {
     expect(zAccountId.safeParse('not-an-address').success).toBe(false)
   })
+
+  it('reports a zod v4 issue with a string message', () => {
+    const result = zAccountId.safeParse('not-an-address')
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0)
+      expect(typeof result.error.issues[0].message).toBe('string')
+      expect(result.error.issues[0].code).toBeDefined()
+    }
+  })
 })
 
 describe('zContractId', () => {
@@ -38,6 +48,15 @@ describe('zAddress', () => {
   it('rejects anything else', () => {
     expect(zAddress.safeParse('xyz').success).toBe(false)
   })
+
+  it('exposes issues via the v4 error API', () => {
+    const result = zAddress.safeParse('xyz')
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(Array.isArray(result.error.issues)).toBe(true)
+      expect(result.error.issues.length).toBeGreaterThan(0)
+    }
+  })
 })
 
 describe('zAmount', () => {
@@ -47,5 +66,13 @@ describe('zAmount', () => {
 
   it.each(['-1', '1.12345678', 'abc', ''])('rejects %s', value => {
     expect(zAmount.safeParse(value).success).toBe(false)
+  })
+
+  it('reports a string message for invalid amounts', () => {
+    const result = zAmount.safeParse('abc')
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(typeof result.error.issues[0].message).toBe('string')
+    }
   })
 })

@@ -75,4 +75,52 @@ export class AuthService {
     if (!user) throw new NotFoundError('User')
     return serializeUser(user)
   }
+
+  async addPasskeyOptions(userId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: { passkeys: true } })
+    if (!user) throw new NotFoundError('User')
+    return this.webauthn.registrationOptions(user.email, user.passkeys)
+  }
+
+  async addPasskey(userId: string, response: RegistrationResponseJSON, label?: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: { passkeys: true } })
+    if (!user) throw new NotFoundError('User')
+
+    const credential = await this.webauthn.verifyRegistration(user.email, response)
+
+    const updated = await prisma.$transaction(async tx => {
+      const existing = await tx.passkey.findUnique({ where: { credentialId: credential.credentialId } })
+      if (existing) throw new ConflictError('This passkey is already registered')
+      await tx.passkey.create({
+        data: {
+          userId: user.id,
+          credentialId: credential.credentialId,
+          credentialPublicKey: Buffer.from(credential.credentialPublicKey),
+          hexPublicKey: credential.hexPublicKey,
+          counter: BigInt(credential.counter),
+          transports: credential.transports,
+          deviceType: credential.deviceType,
+          backedUp: credential.backedUp,
+          label: label ?? null,
+        },
+      })
+      return tx.user.findUniqueOrThrow({ where: { id: user.id }, include: { passkeys: true } })
+    })
+
+    return serializeUser(updated)
+  }
+
+  async removePasskey(userId: string, credentialId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, include: { passkeys: true } })
+    if (!user) throw new NotFoundError('User')
+
+    const passkey = user.passkeys.find(candidate => candidate.credentialId === credentialId)
+    if (!passkey) throw new NotFoundError('Passkey')
+    if (user.passkeys.length <= 1) throw new ConflictError('Cannot remove the only remaining passkey')
+
+    await prisma.passkey.delete({ where: { id: passkey.id } })
+
+    const updated = await prisma.user.findUniqueOrThrow({ where: { id: user.id }, include: { passkeys: true } })
+    return serializeUser(updated)
+  }
 }

@@ -27,4 +27,4 @@ export const zAmount = z
   .regex(DecimalString, 'must be a positive decimal with at most 7 decimal places')
   .openapi({ example: '100.00' })
 
-export const zUuid = z.string().uuid()
+export const zUuid = z.uuid()
