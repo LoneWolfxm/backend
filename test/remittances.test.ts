@@ -14,8 +14,10 @@ const webauthnMocks = vi.hoisted(() => ({
 
 vi.mock('../src/interfaces/webauthn', () => ({
   WebAuthnService: {
-    registrationOptions: webauthnMocks.registrationOptions,
-    verifyRegistration: webauthnMocks.verifyRegistration,
+    getInstance: () => ({
+      registrationOptions: webauthnMocks.registrationOptions,
+      verifyRegistration: webauthnMocks.verifyRegistration,
+    }),
   },
 }))
 
@@ -108,9 +110,12 @@ describe('multi-passkey support', () => {
       data: {
         userId: passkeyUserId,
         credentialId: firstCredentialId,
-        publicKey: Buffer.from('first-public-key').toString('base64url'),
+        credentialPublicKey: Buffer.from('first-public-key'),
+        hexPublicKey: Buffer.from('first-public-key').toString('hex'),
         counter: 0,
-        transports: ['internal'],
+        transports: 'internal',
+        deviceType: 'singleDevice',
+        backedUp: false,
       },
     })
   })
@@ -142,52 +147,51 @@ describe('multi-passkey support', () => {
       excludeCredentials: [{ id: firstCredentialId, type: 'public-key' }],
     })
     webauthnMocks.verifyRegistration.mockResolvedValueOnce({
-      verified: true,
-      registrationInfo: {
-        credential: {
-          id: secondCredentialId,
-          publicKey: Buffer.from('second-public-key'),
-          counter: 0,
-        },
-      },
+      credentialId: secondCredentialId,
+      credentialPublicKey: Buffer.from('second-public-key'),
+      hexPublicKey: Buffer.from('second-public-key').toString('hex'),
+      counter: 0,
+      transports: 'internal',
+      deviceType: 'singleDevice',
+      backedUp: false,
     })
 
-    const optionsResponse = await request(app)
-      .post('/v1/auth/passkey/add/options')
-      .set('authorization', `Bearer ${passkeyToken}`)
-      .send({})
+    const optionsResponse = await request(app).post('/v1/auth/passkey/add/options').set('authorization', `Bearer ${passkeyToken}`).send({})
     expect(optionsResponse.status).toBe(200)
     expect(webauthnMocks.registrationOptions).toHaveBeenCalled()
 
     const verifyResponse = await request(app)
       .post('/v1/auth/passkey/add/verify')
       .set('authorization', `Bearer ${passkeyToken}`)
-      .send({ response: { id: secondCredentialId } })
-    expect(verifyResponse.status).toBe(200)
+      .send({
+        response: {
+          id: secondCredentialId,
+          rawId: 'rawId',
+          type: 'public-key',
+          response: { clientDataJSON: 'clientDataJSON', attestationObject: 'attestationObject' },
+        },
+      })
+    expect(verifyResponse.status).toBe(201)
 
     const meResponse = await request(app).get('/v1/auth/me').set('authorization', `Bearer ${passkeyToken}`)
     expect(meResponse.status).toBe(200)
-    const credentialIds = (meResponse.body.data.passkeys as Array<{ credentialId: string }>).map((p) => p.credentialId)
+    const credentialIds = (meResponse.body.data.passkeys as Array<{ credentialId: string }>).map(p => p.credentialId)
     expect(credentialIds).toContain(firstCredentialId)
     expect(credentialIds).toContain(secondCredentialId)
     expect(credentialIds).toHaveLength(2)
   })
 
   it('removes a passkey when more than one exists', async () => {
-    const response = await request(app)
-      .delete(`/v1/auth/passkeys/${secondCredentialId}`)
-      .set('authorization', `Bearer ${passkeyToken}`)
+    const response = await request(app).delete(`/v1/auth/passkeys/${secondCredentialId}`).set('authorization', `Bearer ${passkeyToken}`)
     expect(response.status).toBe(200)
 
     const meResponse = await request(app).get('/v1/auth/me').set('authorization', `Bearer ${passkeyToken}`)
-    const credentialIds = (meResponse.body.data.passkeys as Array<{ credentialId: string }>).map((p) => p.credentialId)
+    const credentialIds = (meResponse.body.data.passkeys as Array<{ credentialId: string }>).map(p => p.credentialId)
     expect(credentialIds).toEqual([firstCredentialId])
   })
 
   it('rejects removing the only remaining passkey', async () => {
-    const response = await request(app)
-      .delete(`/v1/auth/passkeys/${firstCredentialId}`)
-      .set('authorization', `Bearer ${passkeyToken}`)
+    const response = await request(app).delete(`/v1/auth/passkeys/${firstCredentialId}`).set('authorization', `Bearer ${passkeyToken}`)
     expect(response.status).toBe(409)
 
     const remaining = await prisma.passkey.count({ where: { userId: passkeyUserId } })

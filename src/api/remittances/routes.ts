@@ -1,7 +1,6 @@
 import { z } from '../../lib/zod'
 import { ApiRouter } from '../core/router'
-import { get, list, sync } from './service'
-import { listAdmin, listEvents } from './admin-service'
+import { get, list, listAll, listEvents, listSponsoredTransactions, sync } from './service'
 
 export const remittancesRouter = new ApiRouter('/v1/remittances')
 
@@ -70,12 +69,12 @@ remittancesRouter.post({
 const RemittanceEventSchema = z
   .object({
     id: z.string().uuid(),
-    remittanceId: z.string().uuid(),
-    type: z.string(),
-    fromStatus: z.string().nullable(),
-    toStatus: z.string().nullable(),
-    message: z.string().nullable(),
-    metadata: z.unknown().nullable(),
+    transactionId: z.string().uuid(),
+    source: z.enum(['initiation', 'webhook', 'poll']),
+    fromStatus: z.enum(['incomplete', 'pending_user_transfer', 'pending_anchor', 'completed', 'failed']).nullable(),
+    toStatus: z.enum(['incomplete', 'pending_user_transfer', 'pending_anchor', 'completed', 'failed']),
+    anchorStatus: z.string(),
+    payload: z.unknown(),
     createdAt: z.string(),
   })
   .openapi('RemittanceEvent')
@@ -84,9 +83,7 @@ const AdminListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().uuid().optional(),
   userId: z.string().uuid().optional(),
-  status: z
-    .enum(['incomplete', 'pending_user_transfer', 'pending_anchor', 'completed', 'failed'])
-    .optional(),
+  status: z.enum(['incomplete', 'pending_user_transfer', 'pending_anchor', 'completed', 'failed']).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
 })
@@ -101,7 +98,12 @@ adminRemittancesRouter.get({
   auth: 'admin',
   query: AdminListQuery,
   response: z.object({ items: z.array(RemittanceSchema), nextCursor: z.string().uuid().nullable() }),
-  handler: async ({ query }) => listAdmin(query),
+  handler: async ({ query }) =>
+    listAll({
+      ...query,
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+    }),
 })
 
 adminRemittancesRouter.get({
@@ -112,5 +114,47 @@ adminRemittancesRouter.get({
   params: IdParams,
   response: z.object({ items: z.array(RemittanceEventSchema) }),
   errors: { 404: 'Remittance transaction not found' },
-  handler: async ({ params }) => listEvents(params.id),
+  handler: async ({ params }) => ({ items: await listEvents(params.id) }),
+})
+
+const SponsoredTransactionSchema = z
+  .object({
+    id: z.string().uuid(),
+    userId: z.string().nullable(),
+    contractId: z.string().nullable(),
+    method: z.string().nullable(),
+    status: z.enum(['submitted', 'succeeded', 'failed']),
+    feeCharged: z.string().nullable(),
+    stellarTxHash: z.string(),
+    errorMessage: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi('SponsoredTransaction')
+
+const AdminSponsoredTransactionsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().uuid().optional(),
+  userId: z.string().optional(),
+  status: z.enum(['submitted', 'succeeded', 'failed']).optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+})
+
+export const adminSponsoredTransactionsRouter = new ApiRouter('/v1/admin/sponsored-transactions')
+
+adminSponsoredTransactionsRouter.get({
+  path: '',
+  summary: 'List relayer-sponsored transactions across all users',
+  description: "Newest first. Pass the previous response's `nextCursor` to fetch the next page.",
+  tags: ['Admin'],
+  auth: 'admin',
+  query: AdminSponsoredTransactionsQuery,
+  response: z.object({ items: z.array(SponsoredTransactionSchema), nextCursor: z.string().uuid().nullable() }),
+  handler: async ({ query }) =>
+    listSponsoredTransactions({
+      ...query,
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+    }),
 })

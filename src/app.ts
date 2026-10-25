@@ -15,7 +15,7 @@ import { requestId } from './api/core/middlewares/request-id'
 import { fxRouter } from './api/fx/routes'
 import { healthRouter } from './api/health/routes'
 import { paymasterRouter } from './api/paymaster/routes'
-import { remittancesRouter } from './api/remittances/routes'
+import { adminRemittancesRouter, adminSponsoredTransactionsRouter, remittancesRouter } from './api/remittances/routes'
 import { sessionKeysRouter } from './api/session-keys/routes'
 import { walletRouter } from './api/wallet/routes'
 import { env } from './config/env'
@@ -49,6 +49,8 @@ export function createApp(): Express {
   app.use(adminCorridorsRouter.prefix, adminCorridorsRouter.router)
   app.use(anchorsRouter.prefix, anchorsRouter.router)
   app.use(remittancesRouter.prefix, remittancesRouter.router)
+  app.use(adminRemittancesRouter.prefix, adminRemittancesRouter.router)
+  app.use(adminSponsoredTransactionsRouter.prefix, adminSponsoredTransactionsRouter.router)
   app.use(fxRouter.prefix, fxRouter.router)
 
   const openapi = buildOpenApiDocument()

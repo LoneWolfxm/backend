@@ -5,8 +5,6 @@
 Passkey smart wallets, a sponsored Soroban relay/paymaster, and SEP-10/SEP-24 remittance
 corridors with FX quoting, on Stellar.
 
-Based on backend architecture from: https://github.com/stellar/smart-wallet-demo-app
-
 ## What this service does
 
 - **Passkey smart wallets** — WebAuthn (ES256/P-256) enrollment and login (`/v1/auth`), smart
@@ -89,9 +87,8 @@ Based on backend architecture from: https://github.com/stellar/smart-wallet-demo
 - PostgreSQL 14+
 - A funded Stellar account for `RELAYER_SECRET_KEY` and one for `PAYMASTER_SECRET_KEY`
   (testnet: fund via https://friendbot.stellar.org)
-- The compiled account-factory and subsidy contracts from
-  [`stellar/smart-wallet-demo-app`](https://github.com/stellar/smart-wallet-demo-app) deployed to
-  your target network, for `ACCOUNT_CONTRACT_ID` / `SUBSIDY_CONTRACT_ID`
+- The compiled account-factory and subsidy contracts deployed to your target network, for
+  `ACCOUNT_CONTRACT_ID` / `SUBSIDY_CONTRACT_ID`
 
 ### Environment variables
 

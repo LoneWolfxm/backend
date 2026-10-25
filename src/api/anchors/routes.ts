@@ -1,13 +1,7 @@
 import { z, zAmount } from '../../lib/zod'
 import { ApiRouter } from '../core/router'
-import {
-  authenticate,
-  handleWebhook,
-  initiateDeposit,
-  initiateWithdrawal,
-  prepareWithdrawalFunding,
-  startWithdrawal,
-} from './service'
+import { PreparedInvocationSchema } from '../wallet/schemas'
+import { authenticate, handleWebhook, initiateDeposit, initiateWithdrawal, prepareWithdrawalFunding, startWithdrawal } from './service'
 
 export const anchorsRouter = new ApiRouter('/v1/anchors')
 
@@ -41,18 +35,22 @@ anchorsRouter.post({
   handler: async ({ auth, params, body }) => initiateDeposit(auth.userId, params.code, body.amount),
 })
 
-const PreparedInvocationSchema = z.object({
-  id: z.string().uuid(),
-  smartAccount: z.string(),
-  invocation: z.record(z.unknown()),
-  expiresAt: z.string().optional(),
+const WithdrawalFundingSchema = z.object({
+  account: z.string(),
+  custodyAddress: z.string(),
+  assetCode: z.string(),
+  assetIssuer: z.string(),
+  amount: zAmount,
+  invocationId: z.string().uuid(),
+  preparedInvocation: PreparedInvocationSchema,
+  submitPath: z.string(),
 })
 
 anchorsRouter.post({
   path: '/:code/withdraw',
   summary: 'Start a SEP-24 interactive withdrawal',
   description:
-    'Prepares the funding transfer that moves `amount` of the corridor asset from the user\'s smart wallet into the ' +
+    "Prepares the funding transfer that moves `amount` of the corridor asset from the user's smart wallet into the " +
     "corridor's custody `account`, then starts the SEP-24 interactive withdrawal. The response includes a `funding` " +
     'PreparedInvocation that must be signed and submitted via POST /v1/wallet/invocations/:id/submit before the ' +
     'returned `interactiveUrl` is usable. If `funding` is null the custody account was already funded and the ' +
@@ -68,7 +66,7 @@ anchorsRouter.post({
     interactiveUrl: z.string(),
     anchorTxId: z.string(),
     account: z.string(),
-    funding: PreparedInvocationSchema.nullable(),
+    funding: WithdrawalFundingSchema.nullable(),
   }),
   errors: { 404: 'Corridor not found', 502: 'Anchor rejected the request' },
   handler: async ({ auth, params, body }) => initiateWithdrawal(auth.userId, params.code, body.amount),
@@ -87,7 +85,7 @@ anchorsRouter.post({
   status: 201,
   params: CodeParams,
   body: z.object({ amount: zAmount }),
-  response: z.object({ account: z.string(), funding: PreparedInvocationSchema.nullable() }),
+  response: WithdrawalFundingSchema,
   errors: { 404: 'Corridor not found' },
   handler: async ({ auth, params, body }) => prepareWithdrawalFunding(auth.userId, params.code, body.amount),
 })
@@ -116,7 +114,7 @@ anchorsRouter.post({
   tags: ['Anchors'],
   auth: 'none',
   params: CodeParams,
-  body: z.record(z.unknown()),
+  body: z.record(z.string(), z.unknown()),
   response: z.object({ received: z.literal(true) }),
   errors: { 404: 'Unknown transaction', 502: 'Signature verification failed' },
   handler: async ({ params, req }) => {

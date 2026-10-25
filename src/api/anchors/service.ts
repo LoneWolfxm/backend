@@ -5,12 +5,18 @@ import { prisma } from '../../config/database'
 import { BadRequestError, NotFoundError } from '../../errors'
 import { deriveAnchorKeypair, ensureAnchorAccount } from '../../interfaces/anchors/custody'
 import { authenticateWithAnchor } from '../../interfaces/anchors/sep10'
-import { authenticateWithAnchorSep45, supportsSep45 } from '../../interfaces/anchors/sep45'
 import type { Sep24Transaction } from '../../interfaces/anchors/sep24'
-import { fetchTransaction, startDeposit, startWithdrawal, verifyWebhookSignature } from '../../interfaces/anchors/sep24'
+import {
+  fetchTransaction,
+  startDeposit,
+  startWithdrawal as startSep24Withdrawal,
+  verifyWebhookSignature,
+} from '../../interfaces/anchors/sep24'
 import { decrypt, encrypt } from '../../lib/crypto'
-import { getCorridor } from '../corridors/service'
-import { preparePayment } from '../wallet/invocation-service'
+import { corridorTokenContract, getCorridor } from '../corridors/service'
+import { WalletService } from '../wallet/service'
+
+const wallet = new WalletService()
 
 function mapAnchorStatus(status: string): RemittanceStatus {
   switch (status) {
@@ -40,20 +46,20 @@ function mapAnchorStatus(status: string): RemittanceStatus {
 }
 
 /**
- * Ensures a live anchor session, authenticating if needed.
+ * Ensures a live anchor session, authenticating via classic SEP-10 using the
+ * deterministically-derived custody account if needed.
  *
- * When the anchor's stellar.toml advertises SEP-45 support we authenticate as the user's
- * smart-wallet contract address directly; otherwise we fall back to classic SEP-10 using the
- * deterministically-derived custody account.
+ * NOTE: some anchors advertise SEP-45 (contract-account web auth), which would let us
+ * authenticate as the user's smart-wallet contract address directly. That requires a
+ * two-phase prepare/submit signing flow (like wallet invocations) that isn't wired up yet;
+ * see `src/interfaces/anchors/sep45.ts`.
  */
 async function ensureAnchorSession(userId: string, corridorId: string, anchorDomain: string, account: string) {
   const existing = await prisma.anchorSession.findUnique({ where: { userId_corridorId_account: { userId, corridorId, account } } })
   if (existing && existing.expiresAt > new Date(Date.now() + 60_000)) return decrypt(existing.encryptedToken)
 
   const keypair = deriveAnchorKeypair(userId)
-  const { token, expiresAt } = (await supportsSep45(anchorDomain))
-    ? await authenticateWithAnchorSep45(anchorDomain, userId)
-    : await authenticateWithAnchor(anchorDomain, keypair)
+  const { token, expiresAt } = await authenticateWithAnchor(anchorDomain, keypair)
   await prisma.anchorSession.upsert({
     where: { userId_corridorId_account: { userId, corridorId, account } },
     create: { userId, corridorId, account, encryptedToken: encrypt(token), expiresAt },
@@ -65,10 +71,9 @@ async function ensureAnchorSession(userId: string, corridorId: string, anchorDom
 export async function authenticate(userId: string, code: string) {
   const corridor = await getCorridor(code)
   const keypair = deriveAnchorKeypair(userId)
-  const sep45 = await supportsSep45(corridor.anchorDomain)
-  const account = sep45 ? await getSmartWalletAddress(userId) : keypair.publicKey()
+  const account = keypair.publicKey()
   const token = await ensureAnchorSession(userId, corridor.id, corridor.anchorDomain, account)
-  return { account, anchorDomain: corridor.anchorDomain, authMethod: sep45 ? 'sep45' : 'sep10', authenticated: Boolean(token) }
+  return { account, anchorDomain: corridor.anchorDomain, authMethod: 'sep10' as const, authenticated: Boolean(token) }
 }
 
 async function initiate(userId: string, code: string, kind: 'deposit' | 'withdrawal', amount?: string) {
@@ -82,7 +87,7 @@ async function initiate(userId: string, code: string, kind: 'deposit' | 'withdra
   const flow =
     kind === 'deposit'
       ? await startDeposit(corridor.anchorDomain, token, { assetCode: corridor.assetCode, account: keypair.publicKey(), amount })
-      : await startWithdrawal(corridor.anchorDomain, token, { assetCode: corridor.assetCode, account: keypair.publicKey(), amount })
+      : await startSep24Withdrawal(corridor.anchorDomain, token, { assetCode: corridor.assetCode, account: keypair.publicKey(), amount })
 
   const transaction = await prisma.remittanceTransaction.create({
     data: {
@@ -123,11 +128,11 @@ export async function prepareWithdrawalFunding(userId: string, code: string, amo
 
   await ensureAnchorAccount(keypair, asset)
 
-  const prepared = await preparePayment(userId, {
-    destination: keypair.publicKey(),
-    assetCode: corridor.assetCode,
-    assetIssuer: corridor.assetIssuer,
+  const prepared = await wallet.preparePayment(userId, {
+    token: corridorTokenContract(corridor),
+    to: keypair.publicKey(),
     amount,
+    signer: 'passkey',
   })
 
   return {
@@ -148,9 +153,15 @@ export async function prepareWithdrawalFunding(userId: string, code: string, amo
  */
 export async function initiateWithdrawal(userId: string, code: string, amount?: string) {
   const result = await initiate(userId, code, 'withdrawal', amount)
-  const funding = amount ? await prepareWithdrawalFunding(userId, code, amount) : undefined
+  const funding = amount ? await prepareWithdrawalFunding(userId, code, amount) : null
   return { ...result, funding }
 }
+
+/**
+ * Starts the SEP-24 interactive withdrawal flow without preparing a funding transfer.
+ * Intended to be called after `prepareWithdrawalFunding`'s invocation has been submitted.
+ */
+export const startWithdrawal = (userId: string, code: string, amount?: string) => initiate(userId, code, 'withdrawal', amount)
 
 async function recordUpdate(transactionId: string, source: 'webhook' | 'poll', remote: Sep24Transaction) {
   const current = await prisma.remittanceTransaction.findUniqueOrThrow({ where: { id: transactionId } })
@@ -215,31 +226,4 @@ export async function syncTransactionById(transactionId: string) {
   const transaction = await prisma.remittanceTransaction.findUnique({ where: { id: transactionId } })
   if (!transaction) throw new NotFoundError('Remittance transaction')
   return syncTransaction(transaction.userId, transactionId)
-}
-
-/**
- * Finds non-terminal transactions whose `updatedAt` is older than `staleAfterMs` and syncs them,
- * one small batch at a time. Failures are logged per-transaction and never abort the batch.
- */
-export async function pollStaleTransactions(options: { staleAfterMs: number; batchSize?: number }) {
-  const { staleAfterMs, batchSize = 10 } = options
-  const cutoff = new Date(Date.now() - staleAfterMs)
-
-  const stale = await prisma.remittanceTransaction.findMany({
-    where: { status: { notIn: ['completed', 'failed'] }, updatedAt: { lt: cutoff } },
-    orderBy: { updatedAt: 'asc' },
-    take: batchSize,
-    select: { id: true },
-  })
-
-  let synced = 0
-  for (const { id } of stale) {
-    try {
-      await syncTransactionById(id)
-      synced += 1
-    } catch (error) {
-      console.error(`[remittance-poller] failed to sync transaction ${id}`, error)
-    }
-  }
-  return { scanned: stale.length, synced }
 }

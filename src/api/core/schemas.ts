@@ -16,7 +16,7 @@ export const RegistrationResponseSchema = z
         transports: z.array(z.string()).optional(),
       })
       .passthrough(),
-    clientExtensionResults: z.record(z.unknown()).default({}),
+    clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
     authenticatorAttachment: z.string().optional(),
   })
   .passthrough()
@@ -36,7 +36,7 @@ export const AuthenticationResponseSchema = z
         userHandle: base64url.optional(),
       })
       .passthrough(),
-    clientExtensionResults: z.record(z.unknown()).default({}),
+    clientExtensionResults: z.record(z.string(), z.unknown()).default({}),
     authenticatorAttachment: z.string().optional(),
   })
   .passthrough()
@@ -44,7 +44,7 @@ export const AuthenticationResponseSchema = z
   .openapi('AuthenticationResponseJSON', { description: 'Output of navigator.credentials.get() as JSON' })
 
 export const WebAuthnOptionsSchema = z
-  .record(z.unknown())
+  .record(z.string(), z.unknown())
   .openapi('WebAuthnOptions', { description: 'PublicKeyCredential creation/request options (JSON) for @simplewebauthn/browser' })
 
 export const UserSchema = z

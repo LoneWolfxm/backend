@@ -1,5 +1,3 @@
-// src/interfaces/anchors/sep45.ts
-//
 // SEP-45 (contract-account) web authentication for anchors.
 //
 // SEP-45 extends SEP-10 web auth to Soroban contract accounts. Instead of a
@@ -14,56 +12,51 @@
 //   4. Obtain a signature from the caller (passkey assertion or session key).
 //   5. Attach the signature to the authorization entry.
 //   6. POST the signed entry back to the anchor to obtain a JWT.
+//
+// NOTE: nothing calls this yet — wiring it up requires a two-phase prepare/submit
+// flow (like wallet invocations) so the client can actually produce `signer`'s
+// signature. See `src/api/anchors/service.ts`.
 
-import { requestJson } from "../../lib/http-client";
-import { SorobanService } from "../soroban";
-import type { AnchorToml } from "./toml";
+import { xdr } from '@stellar/stellar-sdk'
 
-/**
- * The stellar.toml field that advertises SEP-45 support.
- *
- * NOTE: The SEP-45 spec has evolved over time. Historically the field has been
- * referred to as `WEB_AUTH_CONTRACT_ID`; some anchors also advertise support via
- * `WEB_AUTH_ENDPOINT` combined with a contract-id field. We check the canonical
- * `WEB_AUTH_CONTRACT_ID` first and fall back to a couple of known aliases so we
- * remain compatible with anchors that adopted earlier drafts.
- */
-const SEP45_CONTRACT_ID_KEYS = [
-  "WEB_AUTH_CONTRACT_ID",
-  "WEB_AUTH_FOR_CONTRACTS_CONTRACT_ID",
-  "SEP45_CONTRACT_ID",
-] as const;
+import { requestJson } from '../../lib/http-client'
+import { SorobanService } from '../soroban'
+import type { AnchorToml } from './toml'
+import { getAnchorToml } from './toml'
+
+/** How long a SEP-45 signature remains valid for, in ledgers-equivalent seconds. */
+const VALID_UNTIL_TTL_SECONDS = 300
 
 /**
- * A signature provider. Mirrors the signer shape used by the wallet invocation
- * service: given a payload (base64-encoded Soroban auth payload), return a
- * base64-encoded signature suitable for attaching to the authorization entry.
+ * A signature provider: given the 32-byte Soroban auth payload the wallet's
+ * `__check_auth` will verify, returns the `Signature` ScVal to attach to the
+ * authorization entry (built via `WalletSignature.passkey` / `.sessionKey`).
  */
-export type Sep45Signer = (payload: string) => Promise<string>;
+export type Sep45Signer = (payload: Buffer) => Promise<xdr.ScVal>
 
 export interface Sep45AuthResult {
   /** The JWT issued by the anchor. */
-  token: string;
+  token: string
   /** Unix timestamp (seconds) at which the token expires, if known. */
-  expiresAt?: number;
+  expiresAt?: number
   /** The contract id the anchor advertised for SEP-45. */
-  contractId: string;
+  contractId: string
 }
 
 export interface Sep45ChallengeResponse {
   /** Base64-encoded Soroban authorization entry (XDR). */
-  authorization_entry?: string;
+  authorization_entry?: string
   /** Some anchors return the entry under this key. */
-  auth_entry?: string;
+  auth_entry?: string
   /** Optional network passphrase the entry was built for. */
-  network_passphrase?: string;
+  network_passphrase?: string
 }
 
 export interface Sep45TokenResponse {
-  token?: string;
+  token?: string
   /** Optional expiry, either as a unix timestamp or ISO string. */
-  expires_at?: number | string;
-  expiresAt?: number | string;
+  expires_at?: number | string
+  expiresAt?: number | string
 }
 
 /**
@@ -71,94 +64,61 @@ export interface Sep45TokenResponse {
  * `undefined` if the anchor does not support SEP-45.
  */
 export function getSep45ContractId(toml: AnchorToml | undefined | null): string | undefined {
-  if (!toml) {
-    return undefined;
-  }
-  const record = toml as unknown as Record<string, unknown>;
-  for (const key of SEP45_CONTRACT_ID_KEYS) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim();
-    }
-  }
-  return undefined;
+  const contractId = toml?.webAuthContractId?.trim()
+  return contractId ? contractId : undefined
 }
 
 /**
  * Returns `true` if the anchor's stellar.toml advertises SEP-45 support.
  */
 export function supportsSep45(toml: AnchorToml | undefined | null): boolean {
-  return getSep45ContractId(toml) !== undefined;
+  return getSep45ContractId(toml) !== undefined
 }
 
 /**
  * Derives an expiry (unix seconds) from a JWT's `exp` claim, if present.
  */
 export function getTokenExpiry(token: string): number | undefined {
-  const parts = token.split(".");
+  const parts = token.split('.')
   if (parts.length < 2) {
-    return undefined;
+    return undefined
   }
   try {
-    const payload = JSON.parse(base64UrlDecode(parts[1])) as { exp?: unknown };
-    if (typeof payload.exp === "number" && Number.isFinite(payload.exp)) {
-      return payload.exp;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { exp?: unknown }
+    if (typeof payload.exp === 'number' && Number.isFinite(payload.exp)) {
+      return payload.exp
     }
   } catch {
     // Malformed token payload; fall through.
   }
-  return undefined;
-}
-
-function base64UrlDecode(input: string): string {
-  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-  if (typeof atob === "function") {
-    return atob(padded);
-  }
-  // Node fallback.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bufferCtor = (globalThis as any).Buffer;
-  if (bufferCtor) {
-    return bufferCtor.from(padded, "base64").toString("utf8");
-  }
-  throw new Error("No base64 decoder available");
+  return undefined
 }
 
 function normalizeExpiry(value: number | string | undefined): number | undefined {
   if (value === undefined) {
-    return undefined;
+    return undefined
   }
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
     // Heuristic: values below ~year 2001 in ms are actually seconds.
-    return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value);
+    return value > 1e12 ? Math.floor(value / 1000) : Math.floor(value)
   }
-  if (typeof value === "string") {
-    const asNumber = Number(value);
+  if (typeof value === 'string') {
+    const asNumber = Number(value)
     if (Number.isFinite(asNumber)) {
-      return normalizeExpiry(asNumber);
+      return normalizeExpiry(asNumber)
     }
-    const parsed = Date.parse(value);
+    const parsed = Date.parse(value)
     if (Number.isFinite(parsed)) {
-      return Math.floor(parsed / 1000);
+      return Math.floor(parsed / 1000)
     }
   }
-  return undefined;
+  return undefined
 }
 
 function buildUrl(domain: string, path: string): string {
-  const trimmed = domain.replace(/\/+$/, "");
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  return `${withScheme}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-/**
- * Fetches the anchor's stellar.toml. Kept local so this module has no hard
- * dependency on the exact toml loader implementation.
- */
-async function fetchAnchorToml(anchorDomain: string): Promise<AnchorToml> {
-  const url = buildUrl(anchorDomain, "/.well-known/stellar.toml");
-  return requestJson<AnchorToml>(url, { method: "GET" });
+  const trimmed = domain.replace(/\/+$/, '')
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+  return `${withScheme}${path.startsWith('/') ? path : `/${path}`}`
 }
 
 /**
@@ -167,29 +127,24 @@ async function fetchAnchorToml(anchorDomain: string): Promise<AnchorToml> {
 export async function requestSep45Challenge(
   anchorDomain: string,
   walletContractAddress: string,
-  contractId: string,
+  contractId: string
 ): Promise<Sep45ChallengeResponse> {
-  const url = buildUrl(anchorDomain, "/sep45/challenge");
-  return requestJson<Sep45ChallengeResponse>(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      account: walletContractAddress,
-      contract_id: contractId,
-      client_domain: undefined,
-    }),
-  });
+  const url = buildUrl(anchorDomain, '/sep45/challenge')
+  return requestJson<Sep45ChallengeResponse>('anchor', url, {
+    method: 'POST',
+    json: { account: walletContractAddress, contract_id: contractId },
+  })
 }
 
 /**
  * Extracts the base64-encoded authorization entry from a challenge response.
  */
 export function extractAuthorizationEntry(response: Sep45ChallengeResponse): string {
-  const entry = response.authorization_entry ?? response.auth_entry;
-  if (!entry || typeof entry !== "string") {
-    throw new Error("SEP-45 challenge response did not include an authorization entry");
+  const entry = response.authorization_entry ?? response.auth_entry
+  if (!entry || typeof entry !== 'string') {
+    throw new Error('SEP-45 challenge response did not include an authorization entry')
   }
-  return entry;
+  return entry
 }
 
 /**
@@ -205,51 +160,46 @@ export async function authenticateWithAnchorSep45(
   anchorDomain: string,
   walletContractAddress: string,
   signer: Sep45Signer,
-  toml?: AnchorToml,
+  toml?: AnchorToml
 ): Promise<Sep45AuthResult> {
-  const resolvedToml = toml ?? (await fetchAnchorToml(anchorDomain));
-  const contractId = getSep45ContractId(resolvedToml);
+  const resolvedToml = toml ?? (await getAnchorToml(anchorDomain))
+  const contractId = getSep45ContractId(resolvedToml)
   if (!contractId) {
-    throw new Error(`Anchor ${anchorDomain} does not advertise SEP-45 support`);
+    throw new Error(`Anchor ${anchorDomain} does not advertise SEP-45 support`)
   }
 
-  const challenge = await requestSep45Challenge(anchorDomain, walletContractAddress, contractId);
-  const authorizationEntry = extractAuthorizationEntry(challenge);
+  const challenge = await requestSep45Challenge(anchorDomain, walletContractAddress, contractId)
+  const authorizationEntry = xdr.SorobanAuthorizationEntry.fromXDR(extractAuthorizationEntry(challenge), 'base64')
+
+  const soroban = SorobanService.getInstance()
+  const validUntilLedger = await soroban.validUntilLedger(VALID_UNTIL_TTL_SECONDS)
 
   // Compute the auth payload exactly as the wallet invocation flow does.
-  const payload = SorobanService.authPayload(authorizationEntry);
+  const payload = soroban.authPayload(authorizationEntry, validUntilLedger)
 
   // Obtain a signature from the caller (passkey assertion or session key).
-  const signature = await signer(payload);
-  if (!signature) {
-    throw new Error("SEP-45 signer returned an empty signature");
-  }
+  const signature = await signer(payload)
 
   // Attach the signature to the authorization entry.
-  const signedEntry = SorobanService.attachSignature(authorizationEntry, signature);
+  const signedEntry = soroban.attachSignature(authorizationEntry, validUntilLedger, signature)
 
   // Submit the signed entry back to the anchor to obtain a JWT.
-  const tokenUrl = buildUrl(anchorDomain, "/sep45/token");
-  const tokenResponse = await requestJson<Sep45TokenResponse>(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const tokenUrl = buildUrl(anchorDomain, '/sep45/token')
+  const tokenResponse = await requestJson<Sep45TokenResponse>('anchor', tokenUrl, {
+    method: 'POST',
+    json: {
       account: walletContractAddress,
       contract_id: contractId,
-      authorization_entry: signedEntry,
-    }),
-  });
+      authorization_entry: signedEntry.toXDR('base64'),
+    },
+  })
 
-  const token = tokenResponse.token;
-  if (!token || typeof token !== "string") {
-    throw new Error("SEP-45 token response did not include a token");
+  const token = tokenResponse.token
+  if (!token || typeof token !== 'string') {
+    throw new Error('SEP-45 token response did not include a token')
   }
 
-  const expiresAt =
-    normalizeExpiry(tokenResponse.expires_at ?? tokenResponse.expiresAt) ?? getTokenExpiry(token);
+  const expiresAt = normalizeExpiry(tokenResponse.expires_at ?? tokenResponse.expiresAt) ?? getTokenExpiry(token)
 
-  return { token, expiresAt, contractId };
+  return { token, expiresAt, contractId }
 }
-```
-
-Note: this module assumes `SorobanService.authPayload(entry)` and `SorobanService.attachSignature(entry, signature)` exist (or are added) on `src/interfaces/soroban/index.ts` as the shared auth-payload helpers referenced by the issue. If the existing helpers have different names/signatures, adjust the two call sites accordingly.

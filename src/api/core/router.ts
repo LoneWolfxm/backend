@@ -1,7 +1,7 @@
 import type { RouteConfig } from '@asteasolutions/zod-to-openapi'
 import type { Request, RequestHandler, Response } from 'express'
 import { Router } from 'express'
-import type { AnyZodObject, ZodTypeAny } from 'zod'
+import type { ZodObject, ZodTypeAny } from 'zod'
 
 import { UnauthorizedError } from '../../errors'
 import { z } from '../../lib/zod'
@@ -26,8 +26,8 @@ export type RouteContext<B, Q, P, A extends Auth> = {
 
 export type RouteDefinition<
   B extends ZodTypeAny | undefined,
-  Q extends AnyZodObject | undefined,
-  P extends AnyZodObject | undefined,
+  Q extends ZodObject | undefined,
+  P extends ZodObject | undefined,
   R extends ZodTypeAny,
   A extends Auth,
 > = {
@@ -78,8 +78,8 @@ export class ApiRouter {
       R extends ZodTypeAny,
       A extends Auth,
       B extends ZodTypeAny | undefined = undefined,
-      Q extends AnyZodObject | undefined = undefined,
-      P extends AnyZodObject | undefined = undefined,
+      Q extends ZodObject | undefined = undefined,
+      P extends ZodObject | undefined = undefined,
     >(
       def: RouteDefinition<B, Q, P, R, A>
     ): void => {
@@ -109,7 +109,7 @@ export class ApiRouter {
 
   private document(
     method: Method,
-    def: RouteDefinition<ZodTypeAny | undefined, AnyZodObject | undefined, AnyZodObject | undefined, ZodTypeAny, Auth>
+    def: RouteDefinition<ZodTypeAny | undefined, ZodObject | undefined, ZodObject | undefined, ZodTypeAny, Auth>
   ): void {
     const fullPath = `${this.prefix}${def.path}`.replace(/:(\w+)/g, '{$1}')
     const errors = { ...DEFAULT_ERRORS, ...def.errors }
