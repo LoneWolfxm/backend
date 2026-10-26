@@ -102,7 +102,7 @@ const EnvSchema = z.object({
   ANCHOR_ALLOW_HTTP: bool,
   ANCHOR_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   // Reject SEP-24 callbacks without a valid anchor signature
-  WEBHOOK_REQUIRE_SIGNATURE: bool.default('true'),
+  WEBHOOK_REQUIRE_SIGNATURE: bool.default(true),
   WEBHOOK_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(300),
   // Background poller for remittance transactions stuck in a non-terminal state
   REMITTANCE_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),

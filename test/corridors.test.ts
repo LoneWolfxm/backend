@@ -14,8 +14,10 @@ const adminKey = 'test-admin-key'
 const SEEDED_CORRIDOR_CODES = ['USDC', 'EURC', 'ARST', 'BRLA']
 const STELLAR_PUBLIC_KEY = /^G[A-Z2-7]{55}$/
 
+let corridorId: string
+
 beforeAll(async () => {
-  await prisma.corridor.create({
+  const corridor = await prisma.corridor.create({
     data: {
       code,
       name: 'Test Corridor',
@@ -25,6 +27,7 @@ beforeAll(async () => {
       anchorDomain: 'testanchor.stellar.org',
     },
   })
+  corridorId = corridor.id
 })
 
 afterAll(async () => {
@@ -48,7 +51,7 @@ describe('GET /v1/corridors', () => {
 describe('seeded corridors', () => {
   it('have real (non-placeholder) asset issuers', async () => {
     const corridors = await prisma.corridor.findMany({ where: { code: { in: SEEDED_CORRIDOR_CODES } } })
-    expect(corridors.map((corridor) => corridor.code).sort()).toEqual([...SEEDED_CORRIDOR_CODES].sort())
+    expect(corridors.map(corridor => corridor.code).sort()).toEqual([...SEEDED_CORRIDOR_CODES].sort())
 
     for (const corridor of corridors) {
       expect(corridor.assetIssuer, `${corridor.code} assetIssuer`).toMatch(STELLAR_PUBLIC_KEY)
@@ -64,7 +67,7 @@ describe('seeded corridors', () => {
       const corridor = response.body.data.find((item: { code: string }) => item.code === corridorCode)
       expect(corridor, `${corridorCode} corridor`).toBeDefined()
       expect(corridor.asset.contractId, `${corridorCode} contractId`).toBeTruthy()
-      expect(corridor.asset.contractId).toBe(corridorTokenContract(corridor.assetCode, corridor.assetIssuer))
+      expect(corridor.asset.contractId).toBe(corridorTokenContract({ assetCode: corridor.asset.code, assetIssuer: corridor.asset.issuer }))
     }
   })
 })
@@ -103,18 +106,23 @@ describe('POST /v1/admin/corridors', () => {
 })
 
 describe('GET /v1/admin/sponsored-transactions', () => {
-  const userId = `usr_${randomUUID().slice(0, 8)}`
+  const userId = randomUUID()
   const contractId = `C${randomUUID().replace(/-/g, '').slice(0, 55).toUpperCase()}`
   const createdIds: string[] = []
 
   beforeAll(async () => {
+    await prisma.user.create({ data: { id: userId, email: `${userId}@example.com` } })
+
     const first = await prisma.sponsoredTransaction.create({
       data: {
         userId,
         contractId,
         method: 'transfer',
-        status: 'SUCCESS',
-        feeCharged: '100',
+        status: 'succeeded',
+        innerHash: randomUUID().replace(/-/g, ''),
+        feeBumpHash: randomUUID().replace(/-/g, ''),
+        maxFee: 1_000_000n,
+        feeCharged: 100n,
       },
     })
     const second = await prisma.sponsoredTransaction.create({
@@ -122,8 +130,11 @@ describe('GET /v1/admin/sponsored-transactions', () => {
         userId,
         contractId,
         method: 'transfer',
-        status: 'FAILED',
-        feeCharged: '0',
+        status: 'failed',
+        innerHash: randomUUID().replace(/-/g, ''),
+        feeBumpHash: randomUUID().replace(/-/g, ''),
+        maxFee: 1_000_000n,
+        feeCharged: 0n,
       },
     })
     createdIds.push(first.id, second.id)
@@ -131,6 +142,7 @@ describe('GET /v1/admin/sponsored-transactions', () => {
 
   afterAll(async () => {
     await prisma.sponsoredTransaction.deleteMany({ where: { id: { in: createdIds } } })
+    await prisma.user.delete({ where: { id: userId } })
   })
 
   it('rejects requests without a valid admin API key', async () => {
@@ -141,60 +153,67 @@ describe('GET /v1/admin/sponsored-transactions', () => {
   it('lists sponsored transactions across all users', async () => {
     const response = await request(app).get('/v1/admin/sponsored-transactions').set('x-api-key', adminKey)
     expect(response.status).toBe(200)
-    expect(Array.isArray(response.body.data)).toBe(true)
-    const ids = response.body.data.map((row: { id: string }) => row.id)
+    expect(Array.isArray(response.body.data.items)).toBe(true)
+    const ids = response.body.data.items.map((row: { id: string }) => row.id)
     expect(ids).toEqual(expect.arrayContaining(createdIds))
   })
 
   it('filters by userId and status', async () => {
     const response = await request(app)
       .get('/v1/admin/sponsored-transactions')
-      .query({ userId, status: 'SUCCESS' })
+      .query({ userId, status: 'succeeded' })
       .set('x-api-key', adminKey)
     expect(response.status).toBe(200)
-    expect(response.body.data.length).toBe(1)
-    expect(response.body.data[0].id).toBe(createdIds[0])
-    expect(response.body.data[0].status).toBe('SUCCESS')
+    expect(response.body.data.items.length).toBe(1)
+    expect(response.body.data.items[0].id).toBe(createdIds[0])
+    expect(response.body.data.items[0].status).toBe('succeeded')
   })
 
   it('paginates with a keyset cursor', async () => {
-    const firstPage = await request(app)
-      .get('/v1/admin/sponsored-transactions')
-      .query({ userId, limit: 1 })
-      .set('x-api-key', adminKey)
+    const firstPage = await request(app).get('/v1/admin/sponsored-transactions').query({ userId, limit: 1 }).set('x-api-key', adminKey)
     expect(firstPage.status).toBe(200)
-    expect(firstPage.body.data.length).toBe(1)
-    expect(firstPage.body.nextCursor).toBeTruthy()
+    expect(firstPage.body.data.items.length).toBe(1)
+    expect(firstPage.body.data.nextCursor).toBeTruthy()
 
     const secondPage = await request(app)
       .get('/v1/admin/sponsored-transactions')
-      .query({ userId, limit: 1, cursor: firstPage.body.nextCursor })
+      .query({ userId, limit: 1, cursor: firstPage.body.data.nextCursor })
       .set('x-api-key', adminKey)
     expect(secondPage.status).toBe(200)
-    expect(secondPage.body.data.length).toBe(1)
-    expect(secondPage.body.data[0].id).not.toBe(firstPage.body.data[0].id)
+    expect(secondPage.body.data.items.length).toBe(1)
+    expect(secondPage.body.data.items[0].id).not.toBe(firstPage.body.data.items[0].id)
   })
 })
 
 describe('GET /v1/admin/remittances', () => {
-  const userId = `usr_${randomUUID().slice(0, 8)}`
+  const userId = randomUUID()
   const createdIds: string[] = []
 
   beforeAll(async () => {
+    await prisma.user.create({ data: { id: userId, email: `${userId}@example.com` } })
+
     const first = await prisma.remittanceTransaction.create({
       data: {
         userId,
-        corridorCode: code,
-        amount: '100',
-        status: 'PENDING',
+        corridorId,
+        kind: 'deposit',
+        account: 'GCUZ37M45SEMGYFYYZE7IBTS3ISKGPDLFRNHS73ORSTMNYM64NLEQO76',
+        anchorTxId: randomUUID(),
+        status: 'pending_anchor',
+        anchorStatus: 'pending_anchor',
+        amountIn: '100',
       },
     })
     const second = await prisma.remittanceTransaction.create({
       data: {
         userId,
-        corridorCode: code,
-        amount: '250',
-        status: 'COMPLETED',
+        corridorId,
+        kind: 'deposit',
+        account: 'GCUZ37M45SEMGYFYYZE7IBTS3ISKGPDLFRNHS73ORSTMNYM64NLEQO76',
+        anchorTxId: randomUUID(),
+        status: 'completed',
+        anchorStatus: 'completed',
+        amountIn: '250',
       },
     })
     createdIds.push(first.id, second.id)
@@ -202,6 +221,7 @@ describe('GET /v1/admin/remittances', () => {
 
   afterAll(async () => {
     await prisma.remittanceTransaction.deleteMany({ where: { id: { in: createdIds } } })
+    await prisma.user.delete({ where: { id: userId } })
   })
 
   it('rejects requests without a valid admin API key', async () => {
@@ -212,65 +232,80 @@ describe('GET /v1/admin/remittances', () => {
   it('lists remittances across all users', async () => {
     const response = await request(app).get('/v1/admin/remittances').set('x-api-key', adminKey)
     expect(response.status).toBe(200)
-    expect(Array.isArray(response.body.data)).toBe(true)
-    const ids = response.body.data.map((row: { id: string }) => row.id)
+    expect(Array.isArray(response.body.data.items)).toBe(true)
+    const ids = response.body.data.items.map((row: { id: string }) => row.id)
     expect(ids).toEqual(expect.arrayContaining(createdIds))
   })
 
   it('filters by userId and status', async () => {
-    const response = await request(app)
-      .get('/v1/admin/remittances')
-      .query({ userId, status: 'COMPLETED' })
-      .set('x-api-key', adminKey)
+    const response = await request(app).get('/v1/admin/remittances').query({ userId, status: 'completed' }).set('x-api-key', adminKey)
     expect(response.status).toBe(200)
-    expect(response.body.data.length).toBe(1)
-    expect(response.body.data[0].id).toBe(createdIds[1])
+    expect(response.body.data.items.length).toBe(1)
+    expect(response.body.data.items[0].id).toBe(createdIds[1])
   })
 
   it('paginates with a keyset cursor', async () => {
-    const firstPage = await request(app)
-      .get('/v1/admin/remittances')
-      .query({ userId, limit: 1 })
-      .set('x-api-key', adminKey)
+    const firstPage = await request(app).get('/v1/admin/remittances').query({ userId, limit: 1 }).set('x-api-key', adminKey)
     expect(firstPage.status).toBe(200)
-    expect(firstPage.body.data.length).toBe(1)
-    expect(firstPage.body.nextCursor).toBeTruthy()
+    expect(firstPage.body.data.items.length).toBe(1)
+    expect(firstPage.body.data.nextCursor).toBeTruthy()
 
     const secondPage = await request(app)
       .get('/v1/admin/remittances')
-      .query({ userId, limit: 1, cursor: firstPage.body.nextCursor })
+      .query({ userId, limit: 1, cursor: firstPage.body.data.nextCursor })
       .set('x-api-key', adminKey)
     expect(secondPage.status).toBe(200)
-    expect(secondPage.body.data.length).toBe(1)
-    expect(secondPage.body.data[0].id).not.toBe(firstPage.body.data[0].id)
+    expect(secondPage.body.data.items.length).toBe(1)
+    expect(secondPage.body.data.items[0].id).not.toBe(firstPage.body.data.items[0].id)
   })
 })
 
 describe('GET /v1/admin/remittances/:id/events', () => {
-  const userId = `usr_${randomUUID().slice(0, 8)}`
+  const userId = randomUUID()
   let remittanceId: string
 
   beforeAll(async () => {
+    await prisma.user.create({ data: { id: userId, email: `${userId}@example.com` } })
+
     const remittance = await prisma.remittanceTransaction.create({
       data: {
         userId,
-        corridorCode: code,
-        amount: '75',
-        status: 'PENDING',
+        corridorId,
+        kind: 'deposit',
+        account: 'GCUZ37M45SEMGYFYYZE7IBTS3ISKGPDLFRNHS73ORSTMNYM64NLEQO76',
+        anchorTxId: randomUUID(),
+        status: 'pending_anchor',
+        anchorStatus: 'pending_anchor',
       },
     })
     remittanceId = remittance.id
     await prisma.remittanceEvent.createMany({
       data: [
-        { remittanceId, type: 'CREATED', payload: {} },
-        { remittanceId, type: 'STATUS_CHANGED', payload: { from: 'PENDING', to: 'PROCESSING' } },
+        {
+          transactionId: remittanceId,
+          source: 'initiation',
+          toStatus: 'incomplete',
+          anchorStatus: 'incomplete',
+          payload: {},
+          createdAt: new Date(Date.now() - 1000),
+        },
+        {
+          transactionId: remittanceId,
+          source: 'poll',
+          fromStatus: 'incomplete',
+          toStatus: 'pending_anchor',
+          anchorStatus: 'pending_anchor',
+          payload: { from: 'incomplete', to: 'pending_anchor' },
+          createdAt: new Date(),
+        },
       ],
     })
   })
 
   afterAll(async () => {
-    await prisma.remittanceEvent.deleteMany({ where: { remittanceId } })
+    await prisma.remittanceEvent.deleteMany({ where: { transactionId: remittanceId } })
     await prisma.remittanceTransaction.deleteMany({ where: { id: remittanceId } })
+    await prisma.user.delete({ where: { id: userId } })
   })
 
   it('rejects requests without a valid admin API key', async () => {
@@ -279,21 +314,14 @@ describe('GET /v1/admin/remittances/:id/events', () => {
   })
 
   it('returns the full event history for a remittance', async () => {
-    const response = await request(app)
-      .get(`/v1/admin/remittances/${remittanceId}/events`)
-      .set('x-api-key', adminKey)
+    const response = await request(app).get(`/v1/admin/remittances/${remittanceId}/events`).set('x-api-key', adminKey)
     expect(response.status).toBe(200)
-    expect(response.body.data.length).toBe(2)
-    expect(response.body.data.map((event: { type: string }) => event.type)).toEqual([
-      'CREATED',
-      'STATUS_CHANGED',
-    ])
+    expect(response.body.data.items.length).toBe(2)
+    expect(response.body.data.items.map((event: { source: string }) => event.source)).toEqual(['initiation', 'poll'])
   })
 
   it('404s for an unknown remittance id', async () => {
-    const response = await request(app)
-      .get(`/v1/admin/remittances/${randomUUID()}/events`)
-      .set('x-api-key', adminKey)
+    const response = await request(app).get(`/v1/admin/remittances/${randomUUID()}/events`).set('x-api-key', adminKey)
     expect(response.status).toBe(404)
   })
 })

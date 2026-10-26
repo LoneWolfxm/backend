@@ -26,6 +26,19 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://remitpulse:remitpulse@localhost:5432/remitpulse_ci
+      PUBLIC_BASE_URL: http://localhost:8080
+      JWT_SECRET: ci-jwt-secret-at-least-32-characters-long
+      ENCRYPTION_KEY: ci-encryption-key-32-bytes-min-x
+      ANCHOR_CUSTODY_SEED: ci-anchor-custody-seed-32-bytes-min
+      STELLAR_NETWORK_PASSPHRASE: 'Test SDF Network ; September 2015'
+      STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+      STELLAR_HORIZON_URL: https://horizon-testnet.stellar.org
+      ACCOUNT_CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
+      SUBSIDY_CONTRACT_ID: CAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQC526
+      RELAYER_SECRET_KEY: SDEBRYUB2SECLZZH7KLSTY2BQKJ6ENX7UR4TGGWXDQCCCGGPBCQCO736
+      PAYMASTER_SECRET_KEY: SCN7ZZJKY4F2YFANXOGR6IRDXCDBIROQADY5UJXU2FUETWZ2BDP6INCW
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGINS: http://localhost:5173
 
     steps:
       - uses: actions/checkout@v7
@@ -38,6 +51,10 @@ jobs:
       - run: npm ci
 
       - run: npx prisma migrate deploy
+
+      - run: npx prisma generate
+
+      - run: npm run db:seed
 
       - run: npm run lint
 

@@ -95,7 +95,7 @@ const symbolMap = (entries: [string, xdr.ScVal][]): xdr.ScVal =>
  * Wallet `Signature` encodings passed to `__check_auth`.
  *
  * Passkey: the WebAuthn assertion, matching the format used by the
- * smart-wallet-demo-app account contract.
+ * account contract.
  * Session key: raw Ed25519 public key + signature over the auth payload.
  */
 export const WalletSignature = {

@@ -1,5 +1,8 @@
 FROM node:22-slim AS build
 WORKDIR /app
+# Only used by `prisma generate` to resolve the config at build time; the client
+# connects with the real DATABASE_URL at runtime via the pg driver adapter.
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -13,6 +16,7 @@ RUN npm run build
 FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev

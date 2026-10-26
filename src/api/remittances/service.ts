@@ -34,9 +34,9 @@ export function serializeSponsoredTransaction(tx: SponsoredTransaction) {
     contractId: tx.contractId,
     method: tx.method,
     status: tx.status,
-    feeCharged: tx.feeCharged?.toFixed(7) ?? null,
-    stellarTxHash: tx.stellarTxHash,
-    errorMessage: tx.errorMessage,
+    feeCharged: tx.feeCharged?.toString() ?? null,
+    stellarTxHash: tx.feeBumpHash,
+    errorMessage: tx.error,
     createdAt: tx.createdAt.toISOString(),
     updatedAt: tx.updatedAt.toISOString(),
   }
@@ -45,11 +45,12 @@ export function serializeSponsoredTransaction(tx: SponsoredTransaction) {
 export function serializeRemittanceEvent(event: RemittanceEvent) {
   return {
     id: event.id,
-    remittanceId: event.remittanceId,
-    type: event.type,
-    status: event.status,
-    message: event.message,
-    metadata: event.metadata,
+    transactionId: event.transactionId,
+    source: event.source,
+    fromStatus: event.fromStatus,
+    toStatus: event.toStatus,
+    anchorStatus: event.anchorStatus,
+    payload: event.payload,
     createdAt: event.createdAt.toISOString(),
   }
 }
@@ -96,14 +97,16 @@ export async function sync(userId: string, id: string) {
   return get(userId, id)
 }
 
-export async function listAll(options: {
-  limit?: number
-  cursor?: string
-  userId?: string
-  status?: RemittanceTransaction['status']
-  from?: Date
-  to?: Date
-} = {}) {
+export async function listAll(
+  options: {
+    limit?: number
+    cursor?: string
+    userId?: string
+    status?: RemittanceTransaction['status']
+    from?: Date
+    to?: Date
+  } = {}
+) {
   const limit = resolveLimit(options.limit)
   const createdAt = resolveDateRange(options.from, options.to)
 
@@ -124,25 +127,27 @@ export async function listAll(options: {
   return { items: page.map(serializeRemittance), nextCursor: hasMore ? page[page.length - 1].id : null }
 }
 
-export async function listEvents(remittanceId: string) {
-  const transaction = await prisma.remittanceTransaction.findUnique({ where: { id: remittanceId }, select: { id: true } })
+export async function listEvents(transactionId: string) {
+  const transaction = await prisma.remittanceTransaction.findUnique({ where: { id: transactionId }, select: { id: true } })
   if (!transaction) throw new NotFoundError('Remittance transaction')
 
   const events = await prisma.remittanceEvent.findMany({
-    where: { remittanceId },
+    where: { transactionId },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   })
   return events.map(serializeRemittanceEvent)
 }
 
-export async function listSponsoredTransactions(options: {
-  limit?: number
-  cursor?: string
-  userId?: string
-  status?: SponsoredTransaction['status']
-  from?: Date
-  to?: Date
-} = {}) {
+export async function listSponsoredTransactions(
+  options: {
+    limit?: number
+    cursor?: string
+    userId?: string
+    status?: SponsoredTransaction['status']
+    from?: Date
+    to?: Date
+  } = {}
+) {
   const limit = resolveLimit(options.limit)
   const createdAt = resolveDateRange(options.from, options.to)
 

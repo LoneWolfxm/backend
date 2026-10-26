@@ -11,7 +11,7 @@ fxRouter.get({
   tags: ['FX'],
   auth: 'none',
   query: z.object({ base: z.string().length(3).default('USD').openapi({ example: 'USD' }) }),
-  response: z.object({ base: z.string(), rates: z.record(z.number()), asOf: z.string() }),
+  response: z.object({ base: z.string(), rates: z.record(z.string(), z.number()), asOf: z.string() }),
   handler: async ({ query }) => ({
     base: query.base.toUpperCase(),
     rates: await getReferenceRates(query.base.toUpperCase()),

@@ -15,7 +15,7 @@ export const PreparedInvocationSchema = z
     authEntryXdr: z.string().nullable().openapi({ description: 'Unsigned SorobanAuthorizationEntry (base64 XDR)' }),
     validUntilLedger: z.number().int().nullable(),
     webauthnOptions: z
-      .record(z.unknown())
+      .record(z.string(), z.unknown())
       .nullable()
       .openapi({ description: 'Pass to startAuthentication(); its challenge is the auth payload' }),
     minResourceFee: z.string(),

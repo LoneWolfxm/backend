@@ -37,9 +37,7 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
     info: {
       title: 'RemitPulse Backend API',
       version: '0.1.0',
-      description:
-        'Passkey smart wallets, sponsored Soroban relay, SEP-10/SEP-24 remittance corridors and FX quoting on Stellar.\n\n' +
-        'Based on backend architecture from: https://github.com/stellar/smart-wallet-demo-app',
+      description: 'Passkey smart wallets, sponsored Soroban relay, SEP-10/SEP-24 remittance corridors and FX quoting on Stellar.',
     },
     servers: [{ url: env.PUBLIC_BASE_URL }],
     tags: [

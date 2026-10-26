@@ -7,7 +7,8 @@ import { prisma } from './config/database'
 import { env } from './config/env'
 import { logger } from './config/logger'
 import { Sentry, sentryEnabled } from './config/sentry'
-import { syncTransaction } from './api/anchors/service'
+import { syncTransactionById } from './api/anchors/service'
+import { runRemittancePollTick } from './jobs/remittance-poller'
 
 process.on('uncaughtException', error => {
   logger.fatal({ err: error }, 'Uncaught exception')
@@ -26,8 +27,6 @@ const server = app.listen(env.PORT, () => {
   logger.info({ port: env.PORT, network: env.STELLAR_NETWORK_PASSPHRASE }, 'RemitPulse backend listening')
 })
 
-const TERMINAL_STATUSES = ['completed', 'failed']
-
 let pollerRunning = false
 
 async function pollStaleRemittances(): Promise<void> {
@@ -37,32 +36,19 @@ async function pollStaleRemittances(): Promise<void> {
   }
   pollerRunning = true
   try {
-    const staleBefore = new Date(Date.now() - env.REMITTANCE_POLL_STALE_AFTER_SECONDS * 1000)
-    const stale = await prisma.remittanceTransaction.findMany({
-      where: {
-        status: { notIn: TERMINAL_STATUSES },
-        updatedAt: { lt: staleBefore },
+    await runRemittancePollTick({
+      prisma,
+      syncTransaction: async id => {
+        try {
+          await syncTransactionById(id)
+        } catch (err) {
+          logger.error({ err, transactionId: id }, 'Remittance poller: failed to sync transaction')
+          if (sentryEnabled) Sentry.captureException(err)
+        }
       },
-      orderBy: { updatedAt: 'asc' },
-      take: env.REMITTANCE_POLL_BATCH_SIZE,
-      select: { id: true },
+      staleAfterSeconds: env.REMITTANCE_POLL_STALE_AFTER_SECONDS,
+      batchSize: env.REMITTANCE_POLL_BATCH_SIZE,
     })
-
-    if (stale.length === 0) {
-      logger.debug('Remittance poller tick: no stale transactions')
-      return
-    }
-
-    logger.info({ count: stale.length }, 'Remittance poller tick: syncing stale transactions')
-
-    for (const tx of stale) {
-      try {
-        await syncTransaction(tx.id, 'poll')
-      } catch (err) {
-        logger.error({ err, transactionId: tx.id }, 'Remittance poller: failed to sync transaction')
-        if (sentryEnabled) Sentry.captureException(err)
-      }
-    }
   } catch (err) {
     logger.error({ err }, 'Remittance poller tick failed')
     if (sentryEnabled) Sentry.captureException(err)
@@ -71,10 +57,7 @@ async function pollStaleRemittances(): Promise<void> {
   }
 }
 
-const pollerInterval = setInterval(
-  () => void pollStaleRemittances(),
-  env.REMITTANCE_POLL_INTERVAL_SECONDS * 1000,
-)
+const pollerInterval = setInterval(() => void pollStaleRemittances(), env.REMITTANCE_POLL_INTERVAL_SECONDS * 1000)
 if (typeof pollerInterval.unref === 'function') pollerInterval.unref()
 
 logger.info(
@@ -83,7 +66,7 @@ logger.info(
     staleAfterSeconds: env.REMITTANCE_POLL_STALE_AFTER_SECONDS,
     batchSize: env.REMITTANCE_POLL_BATCH_SIZE,
   },
-  'Remittance poller started',
+  'Remittance poller started'
 )
 
 async function shutdown(signal: string): Promise<void> {

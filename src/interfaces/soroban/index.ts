@@ -28,8 +28,6 @@ const LEDGER_SECONDS = 5
 /**
  * Soroban RPC wrapper: builds relayer-sourced invocations, derives the auth
  * payloads users must sign, re-assembles signed transactions and submits them.
- *
- * Adapted from the SorobanService in stellar/smart-wallet-demo-app.
  */
 export class SorobanService {
   private static instance?: SorobanService
